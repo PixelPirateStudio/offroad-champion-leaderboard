@@ -150,15 +150,29 @@ export const getServerSideProps = async () => {
 
     // Return empty leaderboards on error
     // You can also return a fallback to dummy data if preferred
+    const emptyLeaderboard: LeaderboardData<MergedEntry> = {
+      leaderboard: {
+        id: '',
+        name: '',
+        eventId: '',
+        startDate: '',
+        endDate: '',
+        createdAt: '',
+        updatedAt: '',
+        reward: '',
+      },
+      entries: [],
+    };
+
     return {
       props: {
-        dailySinglePlayer: { leaderboard: {} as any, entries: [] },
-        dailyMultiplayer: { leaderboard: {} as any, entries: [] },
-        weeklySinglePlayer: { leaderboard: {} as any, entries: [] },
-        weeklyMultiplayer: { leaderboard: {} as any, entries: [] },
-        monthlySinglePlayer: { leaderboard: {} as any, entries: [] },
-        monthlyMultiplayer: { leaderboard: {} as any, entries: [] },
-      } as DashboardLeaderboardPageProps,
+        dailySinglePlayer: emptyLeaderboard,
+        dailyMultiplayer: emptyLeaderboard,
+        weeklySinglePlayer: emptyLeaderboard,
+        weeklyMultiplayer: emptyLeaderboard,
+        monthlySinglePlayer: emptyLeaderboard,
+        monthlyMultiplayer: emptyLeaderboard,
+      },
     };
   }
 };

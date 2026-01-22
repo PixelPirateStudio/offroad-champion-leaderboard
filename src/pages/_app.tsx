@@ -20,7 +20,7 @@ export default function App({ Component, pageProps }: AppProps) {
   // Regular routes with hamburger menu
   return (
     <>
-      <header className="flex flex-row items-center gap-4 md:gap-6 lg:gap-8 row-start-2 max-w-7xl w-full absolute top-0 p-4 px-20">
+      <header className="flex flex-row items-center gap-4 md:gap-6 lg:gap-8 row-start-2 max-w-7xl w-full absolute top-0 p-4 left-1/2 -translate-x-1/2">
         <img
           src={"/logo.png"}
           alt="Logo"

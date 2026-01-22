@@ -70,7 +70,7 @@ export default function LeaderboardDetail({
           {/* Main Content Area */}
           <div className="flex-1 min-w-0">
             {/* Header */}
-            <div className="mb-4 md:mb-6 lg:mb-8">
+            <div className="mb-4 md:mb-6 lg:mb-8 mt-20">
               <div className="flex flex-col lg:flex-row items-start justify-between gap-4 mb-4">
                 <div className="flex-1">
                   <h1 className="text-2xl lg:text-4xl font-bold text-orange-500 mb-2">
@@ -144,7 +144,7 @@ export default function LeaderboardDetail({
                   <StandingsRow
                     key={entry.userId}
                     place={index + 1}
-                    username={entry.user.username}
+                    username={entry.user.username || JSON.stringify(entry)}
                     countryFlag={getCountryFlag(entry.user.countryCode)}
                     raceCount={entry.races.length}
                     qualified={entry.qualified}
