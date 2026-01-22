@@ -5,7 +5,7 @@ import dayjs, { duration } from "dayjs";
 import durations from "dayjs/plugin/duration";
 import relativeTime from "dayjs/plugin/relativeTime";
 import { Fragment, useState } from "react";
-import { ChevronDownIcon } from "@heroicons/react/24/outline";
+import { ChevronDownIcon, ArrowLeftIcon } from "@heroicons/react/24/outline";
 import { TrackDict } from "../../utils/types/track";
 import { GetServerSideProps } from "next";
 import { tournamentApi, LeaderboardResponse } from "../../services/tournamentApi";
@@ -13,6 +13,7 @@ import {
   transformLeaderboardResponse,
   formatPrize,
 } from "../../utils/apiTransformers";
+import { useRouter } from "next/router";
 dayjs.extend(durations);
 dayjs.extend(relativeTime);
 
@@ -134,6 +135,16 @@ export const LeaderboardPage = (props: {
   entries: MergedEntry[];
 }) => {
   const { leaderboard, entries } = props;
+  const router = useRouter();
+
+  const handleBack = () => {
+    if (window.history.length > 1) {
+      router.back();
+    } else {
+      router.push('/');
+    }
+  };
+
   return (
     <div className={`w-full min-h-screen relative`}>
       <div
@@ -153,8 +164,17 @@ export const LeaderboardPage = (props: {
         />
       </div>
       <div
-        className={`relative max-w-7xl h-auto z-10 mx-auto py-8 md:py-16 lg:py-24 gap-8 md:gap-12 lg:gap-16 flex flex-col px-4 md:px-8 lg:px-16`}
+        className={`relative max-w-7xl h-auto z-10 mx-auto pt-24 md:pt-28 lg:pt-32 pb-8 md:pb-16 lg:pb-24 gap-8 md:gap-12 lg:gap-16 flex flex-col px-4 md:px-8 lg:px-16`}
       >
+        {/* Back Button - positioned below the navbar */}
+        <button
+          onClick={handleBack}
+          className="flex items-center gap-2 text-amber-400 hover:text-amber-300 transition-colors group self-start -mt-8 md:-mt-12 lg:-mt-16 mb-0"
+          aria-label="Go back"
+        >
+          <ArrowLeftIcon className="w-5 h-5 md:w-6 md:h-6 transition-transform group-hover:-translate-x-1" />
+          <span className="text-sm md:text-base font-semibold">Back</span>
+        </button>
         <div className={`absolute top-4 md:top-8 right-4 md:right-8`}>
           {Date.now() < new Date(leaderboard.endDate).getTime() ? (
             <span className="px-3 py-2 md:px-4 md:py-3 lg:px-6 lg:py-4 dark:bg-zinc-900/40 bg-gray-100/40 text-gray-800 dark:text-gray-200 text-sm md:text-base font-semibold rounded-xl border border-gray-900/20 dark:border-gray-100/30">

@@ -8,6 +8,8 @@ import {
   formatPrize,
 } from "@/utils/apiTransformers";
 import dayjs from "dayjs";
+import { useRouter } from "next/router";
+import { ArrowLeftIcon } from "@heroicons/react/24/outline";
 
 const trackNames: Record<string, string> = {
   track1: "Mountain Trace",
@@ -41,6 +43,15 @@ export default function LeaderboardDetail({
   prizeAmount,
   qualifyingRaces,
 }: LeaderboardDetailProps) {
+  const router = useRouter();
+
+  const handleBack = () => {
+    if (window.history.length > 1) {
+      router.back();
+    } else {
+      router.push('/');
+    }
+  };
 
   const formatTime = (ms: number) => {
     const totalSeconds = Math.floor(ms / 1000);
@@ -66,11 +77,21 @@ export default function LeaderboardDetail({
   return (
     <div className="min-h-screen bg-[#0B0A1B] p-3 md:p-6 lg:p-8 font-family-inter">
       <div className="max-w-7xl mx-auto">
+        {/* Back Button - positioned below the navbar */}
+        <button
+          onClick={handleBack}
+          className="flex items-center gap-2 text-amber-400 hover:text-amber-300 transition-colors mb-4 mt-20 md:mt-16 lg:mt-20 group"
+          aria-label="Go back"
+        >
+          <ArrowLeftIcon className="w-5 h-5 md:w-6 md:h-6 transition-transform group-hover:-translate-x-1" />
+          <span className="text-sm md:text-base font-semibold">Back</span>
+        </button>
+
         <div className="flex gap-6">
           {/* Main Content Area */}
           <div className="flex-1 min-w-0">
             {/* Header */}
-            <div className="mb-4 md:mb-6 lg:mb-8 mt-20">
+            <div className="mb-4 md:mb-6 lg:mb-8">
               <div className="flex flex-col lg:flex-row items-start justify-between gap-4 mb-4">
                 <div className="flex-1">
                   <h1 className="text-2xl lg:text-4xl font-bold text-orange-500 mb-2">
