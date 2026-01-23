@@ -4,7 +4,7 @@ export type PublicUser = {
     id: string;
     username: string;
     countryCode?: string; // Optional, ISO 3166-1 alpha-2 country code
-    avatarURL?: string; // Optional, URL to the user's avatar image
+    avatarURL?: string | null; // Optional, URL to the user's avatar image
     name: string;
 }
 export const mergeUsers = (

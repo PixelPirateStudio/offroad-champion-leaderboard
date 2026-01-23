@@ -281,7 +281,7 @@ export const getServerSideProps = async () => {
         }))
         .sort((a, b) => a.fastestTime - b.fastestTime);
     };
-
+    console.log("Leaderboard data fetched and transformed successfully.",weeklySPData.entries);
     return {
       props: {
         dailySingleEntries: sortByFastestTime(dailySPData.entries),

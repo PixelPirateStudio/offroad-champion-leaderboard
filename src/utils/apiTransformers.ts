@@ -84,7 +84,7 @@ export function transformApiEntryToMergedEntry(
     username: apiEntry.username,
     name: apiEntry.username, // API doesn't provide separate display name
     countryCode: apiEntry.country,
-    avatarURL: undefined, // API doesn't provide avatar
+    avatarURL: null, // API doesn't provide avatar
   };
 
   return {

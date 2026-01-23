@@ -4,7 +4,7 @@
  */
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-const API_KEY = process.env.NEXT_PUBLIC_API_KEY || "KEY";
+const API_KEY = process.env.API_KEY || "KEY";
 
 interface ApiError {
   message: string;
