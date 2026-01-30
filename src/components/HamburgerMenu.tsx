@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 
 // Social Media Icon Components
 const FacebookIcon = () => (
@@ -83,15 +84,13 @@ export function HamburgerMenu() {
             >
               Home
             </a>
-            <a
+            <Link
               href="/"
-              target="_blank"
-              rel="noopener noreferrer"
               onClick={() => setIsOpen(false)}
               className="text-white hover:text-amber-400 text-lg font-semibold py-3 px-4 rounded-md hover:bg-white/5 transition-colors"
             >
               Leaderboard
-            </a>
+            </Link>
             <a
               href="https://offroadchampion.com/blog/"
               target="_blank"
