@@ -64,6 +64,11 @@ export function transformApiEntryToLeaderboardEntry(
     leaderboardId,
     races,
     qualified: apiEntry.isQualified,
+    // Include stats from API (convert seconds to milliseconds)
+    cumulativeTime: apiEntry.cumulativeTime * 1000,
+    racesCompleted: apiEntry.racesCompleted,
+    bestSingleRace: apiEntry.bestSingleRace * 1000,
+    avgRaceTime: apiEntry.avgRaceTime * 1000,
   };
 }
 
@@ -81,6 +86,7 @@ export function transformApiEntryToMergedEntry(
 
   const publicUser: PublicUser = {
     id: apiEntry.userId,
+    profileId: apiEntry.profileId,
     username: apiEntry.username,
     name: apiEntry.username, // API doesn't provide separate display name
     countryCode: apiEntry.country,

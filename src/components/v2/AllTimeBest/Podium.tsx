@@ -80,7 +80,7 @@ export const Podium = ({ entries }: PodiumProps) => {
                   </div>
                   {/* Number of Races */}
                   <div className="text-sm md:text-base lg:text-xs font-bold mb-1 truncate">
-                    <span className="text-yellow-500">{entry.races.length}</span>
+                    <span className="text-yellow-500">{entry.racesCompleted ?? entry.races.length}</span>
                     <span className="text-white">W</span>
                   </div>
 
@@ -118,7 +118,7 @@ export const Podium = ({ entries }: PodiumProps) => {
                     </span>
                   </div>
                   <div className="text-lg font-bold flex-shrink-0">
-                    {entry.races.length}
+                    {entry.racesCompleted ?? entry.races.length}
                     <span className="text-yellow-500">W</span>
                   </div>
                 </div>

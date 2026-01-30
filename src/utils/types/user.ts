@@ -2,6 +2,7 @@ import { LeaderboardEntry, MergedEntry } from "./leaderboard";
 
 export type PublicUser = {
     id: string;
+    profileId?: string; // Optional, profile-specific identifier
     username: string;
     countryCode?: string; // Optional, ISO 3166-1 alpha-2 country code
     avatarURL?: string | null; // Optional, URL to the user's avatar image

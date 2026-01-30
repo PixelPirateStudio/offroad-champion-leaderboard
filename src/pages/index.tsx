@@ -269,15 +269,16 @@ export const getServerSideProps = async () => {
       generateLeaderboardId("monthly", "multiplayer")
     );
 
-    // Sort all entries by fastest time
+    // Sort all entries by fastest time (use API's bestSingleRace)
     const sortByFastestTime = (entries: MergedEntry[]) => {
       return entries
         .map((entry) => ({
           ...entry,
-          fastestTime:
+          fastestTime: entry.bestSingleRace ?? (
             entry.races.length > 0
               ? Math.min(...entry.races.map((r) => r.time))
-              : Infinity,
+              : Infinity
+          ),
         }))
         .sort((a, b) => a.fastestTime - b.fastestTime);
     };

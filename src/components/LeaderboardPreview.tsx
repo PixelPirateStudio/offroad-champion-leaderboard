@@ -112,13 +112,14 @@ export const LeaderboardPreview = (props: {
                 <span
                   className={`text-gray-600 dark:text-gray-300 w-24 text-end`}
                 >
-
-                  {dayjs.duration(Math.floor(Array.from(entry.races).reduce((acc, race) => acc + race.time, 0) / entry.races.length)).format("mm:ss:SSS")}
+                  {entry.avgRaceTime
+                    ? dayjs.duration(entry.avgRaceTime).format("mm:ss:SSS")
+                    : "-"}
                 </span>
                 <span
                   className={`text-gray-600 dark:text-gray-300 w-24 text-end`}
                 >
-                  {entry.races.length} Races
+                  {entry.racesCompleted ?? entry.races.length} Races
                 </span>
               </div>
             </div>

@@ -30,6 +30,7 @@ export interface ApiRace {
 
 export interface LeaderboardEntry {
   rank: number;
+  profileId: string;
   userId: string;
   username: string;
   country: string;

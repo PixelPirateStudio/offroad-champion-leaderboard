@@ -42,6 +42,8 @@ export const TournamentLeaderboard = ({
   };
 
   const getFastestTime = (entry: MergedEntry) => {
+    // Use API's bestSingleRace if available, otherwise calculate from races
+    if (entry.bestSingleRace) return entry.bestSingleRace;
     if (!entry.races || entry.races.length === 0) return 0;
     return Math.min(...entry.races.map((r) => r.time));
   };
@@ -89,7 +91,7 @@ export const TournamentLeaderboard = ({
                 username={entry.user.username}
                 countryCode={entry.user.countryCode}
                 score={formatTime(getFastestTime(entry))}
-                races={entry.races.length}
+                races={entry.racesCompleted ?? entry.races.length}
                 qualified={entry.qualified}
               />
             );

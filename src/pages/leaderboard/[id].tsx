@@ -167,7 +167,7 @@ export default function LeaderboardDetail({
                     place={index + 1}
                     username={entry.user.username || JSON.stringify(entry)}
                     countryFlag={getCountryFlag(entry.user.countryCode)}
-                    raceCount={entry.races.length}
+                    raceCount={entry.racesCompleted ?? entry.races.length}
                     qualified={entry.qualified}
                     bestTime={formatTime(entry.fastestTime)}
                     isWinner={index === 0}
@@ -276,14 +276,15 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
       formatPrize(prize)
     );
 
-    // Sort by fastest time
+    // Sort by fastest time (use API's bestSingleRace if available)
     const sortedEntries = leaderboardData.entries
       .map((entry) => ({
         ...entry,
-        fastestTime:
+        fastestTime: entry.bestSingleRace ?? (
           entry.races.length > 0
             ? Math.min(...entry.races.map((r) => r.time))
-            : Infinity,
+            : Infinity
+        ),
       }))
       .sort((a, b) => a.fastestTime - b.fastestTime);
 
