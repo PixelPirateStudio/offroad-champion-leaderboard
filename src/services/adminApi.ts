@@ -41,7 +41,7 @@ class AdminApiService {
   ): Promise<unknown> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      "api": "KEY"
+      "api": process.env.NEXT_PUBLIC_API_KEY || "KEY",
     };
 
     if (options.headers) {
@@ -80,7 +80,7 @@ class AdminApiService {
   async login(username: string, password: string) {
     const response = await fetch(`${this.baseUrl}/api/v2/auth/login`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", api: "KEY" },
+      headers: { "Content-Type": "application/json", api: process.env.NEXT_PUBLIC_API_KEY || "KEY" },
       body: JSON.stringify({ username, password }),
     });
 
