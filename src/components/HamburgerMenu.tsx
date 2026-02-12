@@ -91,6 +91,13 @@ export function HamburgerMenu() {
             >
               Leaderboard
             </Link>
+            <Link
+              href="/orc-wallet"
+              onClick={() => setIsOpen(false)}
+              className="text-white hover:text-amber-400 text-lg font-semibold py-3 px-4 rounded-md hover:bg-white/5 transition-colors"
+            >
+              Bet and Burn
+            </Link>
             <a
               href="https://offroadchampion.com/blog/"
               target="_blank"
