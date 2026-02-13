@@ -77,8 +77,6 @@ export function HamburgerMenu() {
           <nav className="flex flex-col gap-2 p-8 pt-20 flex-grow">
             <a
               href="https://offroadchampion.com/"
-              target="_blank"
-              rel="noopener noreferrer"
               onClick={() => setIsOpen(false)}
               className="text-white hover:text-amber-400 text-lg font-semibold py-3 px-4 rounded-md hover:bg-white/5 transition-colors"
             >
