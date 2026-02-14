@@ -90,7 +90,16 @@ export function HamburgerMenu() {
               className="text-white hover:text-amber-400 text-lg font-semibold py-3 px-4 rounded-md hover:bg-white/5 transition-colors"
             >
               Leaderboard
+              
             </Link>
+                        <Link
+              href="/nft-marketplace"
+              onClick={() => setIsOpen(false)}
+              className="text-white hover:text-amber-400 text-lg font-semibold py-3 px-4 rounded-md hover:bg-white/5 transition-colors"
+            >
+              NFT Marketplace
+            </Link>
+
             <a
               href="https://offroadchampion.com/blog/"
               target="_blank"
