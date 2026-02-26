@@ -68,7 +68,7 @@ export function HamburgerMenu() {
 
       {/* Sidebar */}
       <div
-        className={`fixed top-0 right-0 h-full w-64 bg-[#0E0A1B] border-l border-amber-400/20 z-40 transition-transform duration-300 ease-in-out ${
+        className={`fixed top-0 right-0 h-full w-64 bg-[#212121] border-l border-amber-400/20 z-40 transition-transform duration-300 ease-in-out ${
           isOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
@@ -96,7 +96,7 @@ export function HamburgerMenu() {
               onClick={() => setIsOpen(false)}
               className="text-white hover:text-amber-400 text-lg font-semibold py-3 px-4 rounded-md hover:bg-white/5 transition-colors"
             >
-              Bet and Burn
+              Bet & Burn
             </Link>
             <a
               href="https://offroadchampion.com/blog/"
