@@ -146,13 +146,26 @@ export default function BetBurn() {
         } as TransactionItem;
       });
 
-      setTransactions(mapped);
+      setTransactions((prev) => {
+        const optimistic = prev.filter(
+          (tx) => tx.id.startsWith("stripe-") || tx.id.startsWith("transfer-")
+        );
+
+        const merged = [...optimistic];
+        for (const tx of mapped) {
+          if (!merged.some((item) => item.id === tx.id)) {
+            merged.push(tx);
+          }
+        }
+
+        return merged;
+      });
     } catch {
       // keep optimistic/local transaction list if refresh fails
     }
   };
 
-  const safeSyncProfileAfterMutation = async (baselineGains: number) => {
+  const safeSyncProfileAfterMutation = async (expectedGains: number | null) => {
     try {
       const serverProfileRaw = (await playerApi.getMyProfile()) as Partial<Profile>;
       const serverProfile = mapProfile(serverProfileRaw);
@@ -160,8 +173,17 @@ export default function BetBurn() {
       setProfile((current) => {
         if (!current) return serverProfile;
 
-        const serverUpdatedBalance = Math.abs(serverProfile.gains - baselineGains) > 0.0001;
-        if (serverUpdatedBalance) return serverProfile;
+        if (typeof expectedGains === "number") {
+          const serverMatchesExpected =
+            Math.abs(serverProfile.gains - expectedGains) <= 0.0001;
+
+          if (serverMatchesExpected) return serverProfile;
+
+          return {
+            ...serverProfile,
+            gains: current.gains,
+          };
+        }
 
         return {
           ...serverProfile,
@@ -303,6 +325,8 @@ export default function BetBurn() {
   const submitTransfer = () => {
     const transferUsd = Number.isFinite(parsedTransferAmount) ? parsedTransferAmount : 0;
     const baselineGains = profile?.gains ?? 0;
+    const gmToDeduct = transferUsd / USD_PER_GM;
+    const expectedGains = Math.max(0, Number((baselineGains - gmToDeduct).toFixed(2)));
 
     const transferTx: TransactionItem = {
       id: `transfer-${Date.now()}`,
@@ -314,7 +338,6 @@ export default function BetBurn() {
 
     setProfile((prev) => {
       if (!prev) return prev;
-      const gmToDeduct = transferUsd / USD_PER_GM;
       const nextGains = Math.max(0, prev.gains - gmToDeduct);
       return {
         ...prev,
@@ -325,7 +348,7 @@ export default function BetBurn() {
     setTransactions((prev) => [transferTx, ...prev]);
     setTransferStage("success");
 
-    void safeSyncProfileAfterMutation(baselineGains);
+    void safeSyncProfileAfterMutation(expectedGains);
   };
 
   const w9FormReady =
@@ -996,10 +1019,11 @@ export default function BetBurn() {
                     }}
                     onSuccess={() => {
                       const baselineGains = profile?.gains ?? 0;
+                      const gmToAdd = parsedAddCashAmount / USD_PER_GM;
+                      const expectedGains = Number((baselineGains + gmToAdd).toFixed(2));
 
                       setProfile((prev) => {
                         if (!prev) return prev;
-                        const gmToAdd = parsedAddCashAmount / USD_PER_GM;
                         return {
                           ...prev,
                           gains: Number((prev.gains + gmToAdd).toFixed(2)),
@@ -1016,7 +1040,7 @@ export default function BetBurn() {
                       setTransactions((prev) => [successTx, ...prev]);
                       setAddCashStage("success");
 
-                      void safeSyncProfileAfterMutation(baselineGains);
+                      void safeSyncProfileAfterMutation(expectedGains);
                     }}
                   />
                 </Elements>
@@ -1218,6 +1242,9 @@ const walletRow: React.CSSProperties = {
 
 const walletInfo: React.CSSProperties = {
   textAlign: "center",
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
 };
 
 const tokenLabelRow: React.CSSProperties = {
@@ -1243,23 +1270,31 @@ const tokenLabel: React.CSSProperties = {
 
 const gm: React.CSSProperties = {
   fontSize: 48,
-  fontWeight: 800,
+  fontWeight: 600,
   letterSpacing: "-0.03em",
+  lineHeight: 1,
 };
 
 const conversionLine: React.CSSProperties = {
   marginTop: 6,
-  fontSize: 18,
-  fontWeight: 700,
-  lineHeight: 1.15,
+  fontSize: 44,
+  fontWeight: 800,
+  lineHeight: 1,
   opacity: 0.9,
+  display: "inline-flex",
+  alignItems: "flex-end",
+  justifyContent: "center",
+  gap: 8,
+  whiteSpace: "nowrap",
 };
 
 const conversionMuted: React.CSSProperties = {
-  marginLeft: 6,
-  fontSize: 14,
-  fontWeight: 600,
+  marginLeft: 0,
+  fontSize: 34,
+  fontWeight: 700,
   opacity: 0.75,
+  lineHeight: 1,
+  transform: "translateY(-2px)",
 };
 
 const primary: React.CSSProperties = {
