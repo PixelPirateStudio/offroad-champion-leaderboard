@@ -998,7 +998,7 @@ export default function BetBurn() {
                   {addCashErr && <div style={addCashError}>{addCashErr}</div>}
 
                   <button
-                    style={{ ...primary, width: 180 }}
+                    style={addCashContinueButton}
                     type="button"
                     onClick={startStripeAddCashFlow}
                     disabled={addCashLoading}
@@ -1309,7 +1309,7 @@ const primary: React.CSSProperties = {
 };
 
 const transferAmountWrap: React.CSSProperties = {
-  marginTop: 12,
+  marginTop: 40,
   width: "min(260px, 90vw)",
   background: "rgba(255,255,255,0.95)",
   borderRadius: 999,
@@ -1395,7 +1395,13 @@ const addCashDetails: React.CSSProperties = {
   width: "100%",
   display: "flex",
   flexDirection: "column",
-  gap: 22,
+  gap: 30,
+  marginTop: 18,
+};
+
+const addCashContinueButton: React.CSSProperties = {
+  ...primary,
+  width: 180,
   marginTop: 14,
 };
 
