@@ -24,44 +24,30 @@ type TransactionItem = {
 
 type TabKey = "wallet" | "add cash" | "transactions";
 type AddCashStage = "entry" | "payment" | "success";
-type TransferStage =
-  | "none"
-  | "classification"
-  | "w9"
-  | "w8ben"
-  | "review"
-  | "submitted"
-  | "confirm"
-  | "success";
+type TransferStage = "none" | "method" | "details" | "verify" | "confirm" | "success";
+type WithdrawalMethod = "bank" | "paypal";
 
-type TaxResidency = "us" | "non_us";
+type BankTransferFormData = {
+  accountHolder: string;
+  bankName: string;
+  accountNumber: string;
+  routingNumber: string;
+  email: string;
+};
 
-type TransferFormData = {
+type PayPalTransferFormData = {
   fullName: string;
-  businessName: string;
-  federalTaxClass: string;
+  paypalEmail: string;
+};
+
+type IdentityFormData = {
+  legalName: string;
   address: string;
   city: string;
   state: string;
   zip: string;
-  taxId: string;
-  attestationAccepted: boolean;
-  signatureName: string;
-};
-
-type W8BenFormData = {
-  fullName: string;
-  countryOfCitizenship: string;
-  permanentAddress: string;
-  city: string;
-  region: string;
-  postalCode: string;
-  country: string;
-  foreignTaxId: string;
-  usTin: string;
   dateOfBirth: string;
   attestationAccepted: boolean;
-  signatureName: string;
 };
 
 const USD_PER_GM = 0.01;
@@ -76,9 +62,12 @@ const TAB_LABELS: Record<TabKey, string> = {
 
 export default function BetBurn() {
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loginUsername, setLoginUsername] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginErr, setLoginErr] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [devLoginLoading, setDevLoginLoading] = useState(false);
-  const [devLoginErr, setDevLoginErr] = useState<string | null>(null);
   const [tab, setTab] = useState<TabKey>("wallet");
   const [addCashAmount, setAddCashAmount] = useState<string>("0.00");
   const [addCashStage, setAddCashStage] = useState<AddCashStage>("entry");
@@ -90,33 +79,29 @@ export default function BetBurn() {
   const [txErr, setTxErr] = useState<string | null>(null);
   const [transferStage, setTransferStage] = useState<TransferStage>("none");
   const [transferAmount, setTransferAmount] = useState<string>("0.00");
-  const [taxResidency, setTaxResidency] = useState<TaxResidency>("us");
-  const [transferForm, setTransferForm] = useState<TransferFormData>({
+  const [transferMethod, setTransferMethod] = useState<WithdrawalMethod>("bank");
+  const [bankForm, setBankForm] = useState<BankTransferFormData>({
+    accountHolder: "",
+    bankName: "",
+    accountNumber: "",
+    routingNumber: "",
+    email: "",
+  });
+  const [payPalForm, setPayPalForm] = useState<PayPalTransferFormData>({
     fullName: "",
-    businessName: "",
-    federalTaxClass: "Individual / Sole Proprietor",
+    paypalEmail: "",
+  });
+  const [identityForm, setIdentityForm] = useState<IdentityFormData>({
+    legalName: "",
     address: "",
     city: "",
     state: "",
     zip: "",
-    taxId: "",
-    attestationAccepted: false,
-    signatureName: "",
-  });
-  const [w8BenForm, setW8BenForm] = useState<W8BenFormData>({
-    fullName: "",
-    countryOfCitizenship: "",
-    permanentAddress: "",
-    city: "",
-    region: "",
-    postalCode: "",
-    country: "",
-    foreignTaxId: "",
-    usTin: "",
     dateOfBirth: "",
     attestationAccepted: false,
-    signatureName: "",
   });
+  const [transferSubmitting, setTransferSubmitting] = useState(false);
+  const [transferSubmitErr, setTransferSubmitErr] = useState<string | null>(null);
 
   const mapProfile = (p: Partial<Profile>): Profile => ({
     gains: Number(p.gains) || 0,
@@ -241,7 +226,10 @@ export default function BetBurn() {
   };
 
   useEffect(() => {
-    loadWalletData();
+    if (typeof window !== "undefined" && localStorage.getItem("playerToken")) {
+      setIsAuthenticated(true);
+      loadWalletData();
+    }
   }, []);
 
   useEffect(() => {
@@ -254,6 +242,8 @@ export default function BetBurn() {
 
     if (tab !== "wallet") {
       setTransferStage("none");
+      setTransferSubmitErr(null);
+      setTransferSubmitting(false);
     }
   }, [tab]);
 
@@ -281,7 +271,25 @@ export default function BetBurn() {
     parsedTransferAmount > 0 &&
     parsedTransferAmount <= maxTransferUsd;
   const transferAmountLabel = `$${(hasValidTransferAmount ? parsedTransferAmount : 0).toFixed(2)}`;
-  const selectedTaxForm = taxResidency === "us" ? "W-9" : "W-8BEN";
+  const bankFormReady =
+    bankForm.accountHolder.trim() !== "" &&
+    bankForm.bankName.trim() !== "" &&
+    bankForm.accountNumber.trim() !== "" &&
+    bankForm.routingNumber.trim() !== "" &&
+    bankForm.email.trim() !== "";
+  const payPalFormReady =
+    payPalForm.fullName.trim() !== "" && payPalForm.paypalEmail.trim() !== "";
+  const detailsFormReady = transferMethod === "bank" ? bankFormReady : payPalFormReady;
+  const identityFormReady =
+    identityForm.legalName.trim() !== "" &&
+    identityForm.address.trim() !== "" &&
+    identityForm.city.trim() !== "" &&
+    identityForm.state.trim() !== "" &&
+    identityForm.zip.trim() !== "" &&
+    identityForm.dateOfBirth.trim() !== "" &&
+    identityForm.attestationAccepted;
+
+  const withdrawalEmail = transferMethod === "bank" ? bankForm.email : payPalForm.paypalEmail;
 
   const startStripeAddCashFlow = async () => {
     if (!process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY) {
@@ -298,16 +306,7 @@ export default function BetBurn() {
     setAddCashErr(null);
 
     try {
-      const response = await fetch("/api/stripe/create-payment-intent", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amountUsd: parsedAddCashAmount }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data?.error || "Unable to start Stripe flow");
-      }
+      const data = await playerApi.createStripePaymentIntent({ amountUsd: parsedAddCashAmount });
 
       if (!data.clientSecret) {
         throw new Error("Stripe client secret is missing");
@@ -322,71 +321,82 @@ export default function BetBurn() {
     }
   };
 
-  const submitTransfer = () => {
+  const submitTransfer = async () => {
     const transferUsd = Number.isFinite(parsedTransferAmount) ? parsedTransferAmount : 0;
     const baselineGains = profile?.gains ?? 0;
     const gmToDeduct = transferUsd / USD_PER_GM;
     const expectedGains = Math.max(0, Number((baselineGains - gmToDeduct).toFixed(2)));
 
-    const transferTx: TransactionItem = {
-      id: `transfer-${Date.now()}`,
-      label: "Transfer Submitted",
-      source: "Wallet Transfer",
-      amountLabel: `-$${transferUsd.toFixed(2)}`,
-      kind: "neg",
-    };
+    if (!hasValidTransferAmount || !detailsFormReady || !identityFormReady) {
+      setTransferSubmitErr("Complete all required withdrawal fields before submitting.");
+      return;
+    }
 
-    setProfile((prev) => {
-      if (!prev) return prev;
-      const nextGains = Math.max(0, prev.gains - gmToDeduct);
-      return {
-        ...prev,
-        gains: Number(nextGains.toFixed(2)),
-      };
-    });
-
-    setTransactions((prev) => [transferTx, ...prev]);
-    setTransferStage("success");
-
-    void safeSyncProfileAfterMutation(expectedGains);
-  };
-
-  const w9FormReady =
-    transferForm.fullName.trim() !== "" &&
-    transferForm.address.trim() !== "" &&
-    transferForm.city.trim() !== "" &&
-    transferForm.state.trim() !== "" &&
-    transferForm.zip.trim() !== "" &&
-    transferForm.taxId.trim() !== "" &&
-    transferForm.attestationAccepted &&
-    transferForm.signatureName.trim() !== "";
-
-  const w8FormReady =
-    w8BenForm.fullName.trim() !== "" &&
-    w8BenForm.countryOfCitizenship.trim() !== "" &&
-    w8BenForm.permanentAddress.trim() !== "" &&
-    w8BenForm.city.trim() !== "" &&
-    w8BenForm.postalCode.trim() !== "" &&
-    w8BenForm.country.trim() !== "" &&
-    w8BenForm.dateOfBirth.trim() !== "" &&
-    w8BenForm.country.toLowerCase() !== "united states" &&
-    w8BenForm.country.toLowerCase() !== "us" &&
-    w8BenForm.country.toLowerCase() !== "usa" &&
-    w8BenForm.attestationAccepted &&
-    w8BenForm.signatureName.trim() !== "";
-
-  const handleDevSeedLogin = async () => {
-    setDevLoginLoading(true);
-    setDevLoginErr(null);
+    setTransferSubmitting(true);
+    setTransferSubmitErr(null);
 
     try {
-      await playerApi.login("donna", "donnapass");
+      const result = await playerApi.createRedemption({
+        amount: transferUsd,
+        email: withdrawalEmail,
+      });
+
+      const transferTx: TransactionItem = {
+        id: String(result?.redemptionId || `transfer-${Date.now()}`),
+        label: "Withdrawal Submitted",
+        source: transferMethod === "bank" ? "Bank Transfer" : "PayPal",
+        amountLabel: `-$${transferUsd.toFixed(2)}`,
+        kind: "neg",
+      };
+
+      setProfile((prev) => {
+        if (!prev) return prev;
+        const nextGains = Math.max(0, prev.gains - gmToDeduct);
+        return {
+          ...prev,
+          gains: Number(nextGains.toFixed(2)),
+        };
+      });
+
+      setTransactions((prev) => [transferTx, ...prev]);
+      setTransferStage("success");
+
+      void safeSyncProfileAfterMutation(expectedGains);
+    } catch (e: unknown) {
+      setTransferSubmitErr(e instanceof Error ? e.message : "Withdrawal submission failed");
+    } finally {
+      setTransferSubmitting(false);
+    }
+  };
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!loginUsername.trim() || !loginPassword.trim()) {
+      setLoginErr("Username and password are required.");
+      return;
+    }
+    setLoginLoading(true);
+    setLoginErr(null);
+    try {
+      await playerApi.login(loginUsername.trim(), loginPassword);
+      setIsAuthenticated(true);
       await loadWalletData();
     } catch (e: unknown) {
-      setDevLoginErr(e instanceof Error ? e.message : "Seeded login failed");
+      setLoginErr(e instanceof Error ? e.message : "Login failed. Check your credentials.");
     } finally {
-      setDevLoginLoading(false);
+      setLoginLoading(false);
     }
+  };
+
+  const handleLogout = () => {
+    playerApi.clearSession();
+    setIsAuthenticated(false);
+    setProfile(null);
+    setTransactions([]);
+    setTab("wallet");
+    setTransferStage("none");
+    setAddCashStage("entry");
+    setStripeClientSecret(null);
   };
 
   return (
@@ -398,22 +408,50 @@ export default function BetBurn() {
             <img src="/logo.png" alt="ORC Logo" style={logoImg} />
             <div style={brandText}>ORC Wallet</div>
           </div>
-          {process.env.NODE_ENV !== "production" && (
-            <div style={devActions}>
-              <button
-                type="button"
-                style={devLoginButton}
-                onClick={handleDevSeedLogin}
-                disabled={devLoginLoading}
-              >
-                {devLoginLoading ? "Logging in..." : "Login Seed User"}
-              </button>
-              {devLoginErr && <div style={devLoginError}>{devLoginErr}</div>}
-            </div>
+          {isAuthenticated && (
+            <button type="button" style={logoutButton} onClick={handleLogout}>
+              Log Out
+            </button>
           )}
         </div>
 
-        {/* CENTERED LANE: tabs + content */}
+        {!isAuthenticated ? (
+          /* ── Login form ── */
+          <div style={centerLane}>
+            <div style={loginPanel}>
+              <div style={loginTitle}>Sign In</div>
+              <form onSubmit={handleLogin} style={loginForm} noValidate>
+                <div style={loginField}>
+                  <label style={loginLabel} htmlFor="orc-username">Username</label>
+                  <input
+                    id="orc-username"
+                    value={loginUsername}
+                    onChange={(e) => setLoginUsername(e.target.value)}
+                    style={loginInput}
+                    autoComplete="username"
+                    autoFocus
+                  />
+                </div>
+                <div style={loginField}>
+                  <label style={loginLabel} htmlFor="orc-password">Password</label>
+                  <input
+                    id="orc-password"
+                    type="password"
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    style={loginInput}
+                    autoComplete="current-password"
+                  />
+                </div>
+                {loginErr && <div style={loginError}>{loginErr}</div>}
+                <button type="submit" style={loginSubmitBtn} disabled={loginLoading}>
+                  {loginLoading ? "Signing in…" : "Sign In"}
+                </button>
+              </form>
+            </div>
+          </div>
+        ) : (
+        /* ── Authenticated: tabs + content ── */
         <div style={centerLane}>
           {/* Tabs (centered) */}
           <div style={tabsWrap}>
@@ -486,43 +524,39 @@ export default function BetBurn() {
                     style={primary}
                     type="button"
                     onClick={() => {
-                      setTaxResidency("us");
-                      setTransferForm((prev) => ({
-                        ...prev,
-                        federalTaxClass: "Individual / Sole Proprietor",
-                      }));
+                      setTransferSubmitErr(null);
                       if (hasValidTransferAmount) {
-                        setTransferStage("classification");
+                        setTransferStage("method");
                       }
                     }}
                     disabled={!hasValidTransferAmount}
                   >
-                    Transfer
+                    Withdraw
                   </button>
                 </div>
               )}
 
-              {transferStage === "classification" && (
+              {transferStage === "method" && (
                 <div style={transferScene}>
                   <div style={transferPanel}>
-                    <div style={transferPanelTitle}>Tax Classification</div>
+                    <div style={transferPanelTitle}>Choose Withdrawal Method</div>
                     <div style={classificationList}>
                       <button
                         type="button"
                         style={{
                           ...classificationOption,
                           borderColor:
-                            taxResidency === "us"
+                            transferMethod === "bank"
                               ? "rgba(0,82,180,0.45)"
                               : "rgba(17,17,17,0.15)",
                           background:
-                            taxResidency === "us"
+                            transferMethod === "bank"
                               ? "rgba(0,82,180,0.08)"
                               : "#fff",
                         }}
-                        onClick={() => setTaxResidency("us")}
+                        onClick={() => setTransferMethod("bank")}
                       >
-                        <span style={classificationLabel}>🇺🇸 I am a U.S. Person (complete W-9)</span>
+                        <span style={classificationLabel}>Receive to Bank Account</span>
                       </button>
 
                       <button
@@ -530,152 +564,32 @@ export default function BetBurn() {
                         style={{
                           ...classificationOption,
                           borderColor:
-                            taxResidency === "non_us"
+                            transferMethod === "paypal"
                               ? "rgba(0,82,180,0.45)"
                               : "rgba(17,17,17,0.15)",
                           background:
-                            taxResidency === "non_us"
+                            transferMethod === "paypal"
                               ? "rgba(0,82,180,0.08)"
                               : "#fff",
                         }}
-                        onClick={() => setTaxResidency("non_us")}
+                        onClick={() => setTransferMethod("paypal")}
                       >
-                        <span style={classificationLabel}>🌐 I am a non-U.S. person (complete W-8BEN)</span>
+                        <span style={classificationLabel}>Get paid via PayPal</span>
                       </button>
-                    </div>
-
-                    <div style={transferActionsRow}>
-                      <button
-                        style={transferPrimaryButton}
-                        type="button"
-                        onClick={() => setTransferStage(taxResidency === "us" ? "w9" : "w8ben")}
-                      >
-                        Continue
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {transferStage === "w9" && (
-                <div style={transferScene}>
-                  <div style={transferPanelLarge}>
-                    <div style={transferPanelTitle}>W-9 Form (U.S. Person)</div>
-
-                    <div style={formGridSingle}>
-                      <input
-                        style={transferInput}
-                        placeholder="Legal name"
-                        value={transferForm.fullName}
-                        onChange={(e) =>
-                          setTransferForm((prev) => ({ ...prev, fullName: e.target.value }))
-                        }
-                      />
-                      <input
-                        style={transferInput}
-                        placeholder="Business name / DBA (optional)"
-                        value={transferForm.businessName}
-                        onChange={(e) =>
-                          setTransferForm((prev) => ({ ...prev, businessName: e.target.value }))
-                        }
-                      />
-                      <select
-                        style={transferInput}
-                        value={transferForm.federalTaxClass}
-                        onChange={(e) =>
-                          setTransferForm((prev) => ({ ...prev, federalTaxClass: e.target.value }))
-                        }
-                      >
-                        <option>Individual / Sole Proprietor</option>
-                        <option>C-Corp</option>
-                        <option>S-Corp</option>
-                        <option>Partnership</option>
-                        <option>LLC (Single Member)</option>
-                        <option>Other</option>
-                      </select>
-                      <input
-                        style={transferInput}
-                        placeholder="Address"
-                        value={transferForm.address}
-                        onChange={(e) =>
-                          setTransferForm((prev) => ({ ...prev, address: e.target.value }))
-                        }
-                      />
-                      <div style={formGridTriple}>
-                        <input
-                          style={transferInput}
-                          placeholder="City"
-                          value={transferForm.city}
-                          onChange={(e) =>
-                            setTransferForm((prev) => ({ ...prev, city: e.target.value }))
-                          }
-                        />
-                        <input
-                          style={transferInput}
-                          placeholder="State"
-                          value={transferForm.state}
-                          onChange={(e) =>
-                            setTransferForm((prev) => ({ ...prev, state: e.target.value }))
-                          }
-                        />
-                        <input
-                          style={transferInput}
-                          placeholder="ZIP"
-                          value={transferForm.zip}
-                          onChange={(e) =>
-                            setTransferForm((prev) => ({ ...prev, zip: e.target.value }))
-                          }
-                        />
-                      </div>
-                      <input
-                        style={transferInput}
-                        placeholder="TIN (SSN or EIN)"
-                        value={transferForm.taxId}
-                        onChange={(e) =>
-                          setTransferForm((prev) => ({ ...prev, taxId: e.target.value }))
-                        }
-                      />
-
-                      <label style={attestationRow}>
-                        <input
-                          type="checkbox"
-                          checked={transferForm.attestationAccepted}
-                          onChange={(e) =>
-                            setTransferForm((prev) => ({
-                              ...prev,
-                              attestationAccepted: e.target.checked,
-                            }))
-                          }
-                        />
-                        Under penalties of perjury, I certify this information is true and I am a US person for tax purposes.
-                      </label>
-
-                      <input
-                        style={transferInput}
-                        placeholder="Typed signature"
-                        value={transferForm.signatureName}
-                        onChange={(e) =>
-                          setTransferForm((prev) => ({
-                            ...prev,
-                            signatureName: e.target.value,
-                          }))
-                        }
-                      />
                     </div>
 
                     <div style={transferActionsRow}>
                       <button
                         style={transferSecondaryButton}
                         type="button"
-                        onClick={() => setTransferStage("classification")}
+                        onClick={() => setTransferStage("none")}
                       >
                         Back
                       </button>
                       <button
                         style={transferPrimaryButton}
                         type="button"
-                        disabled={!w9FormReady}
-                        onClick={() => setTransferStage("review")}
+                        onClick={() => setTransferStage("details")}
                       >
                         Continue
                       </button>
@@ -684,174 +598,77 @@ export default function BetBurn() {
                 </div>
               )}
 
-              {transferStage === "w8ben" && (
+              {transferStage === "details" && (
                 <div style={transferScene}>
                   <div style={transferPanelLarge}>
-                    <div style={transferPanelTitle}>W-8BEN Form (Non-U.S. Person)</div>
+                    <div style={transferPanelTitle}>
+                      {transferMethod === "bank" ? "Bank Account Details" : "PayPal Details"}
+                    </div>
 
                     <div style={formGridSingle}>
-                      <input
-                        style={transferInput}
-                        placeholder="Legal name"
-                        value={w8BenForm.fullName}
-                        onChange={(e) =>
-                          setW8BenForm((prev) => ({ ...prev, fullName: e.target.value }))
-                        }
-                      />
-                      <input
-                        style={transferInput}
-                        placeholder="Country of citizenship"
-                        value={w8BenForm.countryOfCitizenship}
-                        onChange={(e) =>
-                          setW8BenForm((prev) => ({
-                            ...prev,
-                            countryOfCitizenship: e.target.value,
-                          }))
-                        }
-                      />
-                      <input
-                        style={transferInput}
-                        placeholder="Permanent address"
-                        value={w8BenForm.permanentAddress}
-                        onChange={(e) =>
-                          setW8BenForm((prev) => ({
-                            ...prev,
-                            permanentAddress: e.target.value,
-                          }))
-                        }
-                      />
-                      <div style={formGridTriple}>
-                        <input
-                          style={transferInput}
-                          placeholder="City"
-                          value={w8BenForm.city}
-                          onChange={(e) =>
-                            setW8BenForm((prev) => ({ ...prev, city: e.target.value }))
-                          }
-                        />
-                        <input
-                          style={transferInput}
-                          placeholder="Region"
-                          value={w8BenForm.region}
-                          onChange={(e) =>
-                            setW8BenForm((prev) => ({ ...prev, region: e.target.value }))
-                          }
-                        />
-                        <input
-                          style={transferInput}
-                          placeholder="Postal code"
-                          value={w8BenForm.postalCode}
-                          onChange={(e) =>
-                            setW8BenForm((prev) => ({ ...prev, postalCode: e.target.value }))
-                          }
-                        />
-                      </div>
-                      <input
-                        style={transferInput}
-                        placeholder="Country (non-US)"
-                        value={w8BenForm.country}
-                        onChange={(e) =>
-                          setW8BenForm((prev) => ({ ...prev, country: e.target.value }))
-                        }
-                      />
-                      <input
-                        style={transferInput}
-                        placeholder="Foreign tax ID (optional)"
-                        value={w8BenForm.foreignTaxId}
-                        onChange={(e) =>
-                          setW8BenForm((prev) => ({
-                            ...prev,
-                            foreignTaxId: e.target.value,
-                          }))
-                        }
-                      />
-                      <input
-                        style={transferInput}
-                        placeholder="US TIN (optional)"
-                        value={w8BenForm.usTin}
-                        onChange={(e) =>
-                          setW8BenForm((prev) => ({ ...prev, usTin: e.target.value }))
-                        }
-                      />
-                      <input
-                        style={transferInput}
-                        type="date"
-                        value={w8BenForm.dateOfBirth}
-                        onChange={(e) =>
-                          setW8BenForm((prev) => ({
-                            ...prev,
-                            dateOfBirth: e.target.value,
-                          }))
-                        }
-                      />
-
-                      <label style={attestationRow}>
-                        <input
-                          type="checkbox"
-                          checked={w8BenForm.attestationAccepted}
-                          onChange={(e) =>
-                            setW8BenForm((prev) => ({
-                              ...prev,
-                              attestationAccepted: e.target.checked,
-                            }))
-                          }
-                        />
-                        Under penalties of perjury, I certify that I am the beneficial owner and a non-US person.
-                      </label>
-
-                      <input
-                        style={transferInput}
-                        placeholder="Typed signature"
-                        value={w8BenForm.signatureName}
-                        onChange={(e) =>
-                          setW8BenForm((prev) => ({
-                            ...prev,
-                            signatureName: e.target.value,
-                          }))
-                        }
-                      />
-                    </div>
-
-                    <div style={transferActionsRow}>
-                      <button
-                        style={transferSecondaryButton}
-                        type="button"
-                        onClick={() => setTransferStage("classification")}
-                      >
-                        Back
-                      </button>
-                      <button
-                        style={transferPrimaryButton}
-                        type="button"
-                        disabled={!w8FormReady}
-                        onClick={() => setTransferStage("review")}
-                      >
-                        Continue
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {transferStage === "review" && (
-                <div style={transferScene}>
-                  <div style={transferPanel}>
-                    <div style={transferPanelTitle}>Review Your Information</div>
-                    <div style={reviewBlock}>
-                      <div style={reviewItem}><strong>Form Type:</strong> {selectedTaxForm}</div>
-                      {taxResidency === "us" ? (
+                      {transferMethod === "bank" ? (
                         <>
-                          <div style={reviewItem}><strong>Name:</strong> {transferForm.fullName}</div>
-                          <div style={reviewItem}><strong>Tax Class:</strong> {transferForm.federalTaxClass}</div>
-                          <div style={reviewItem}><strong>Address:</strong> {transferForm.address}, {transferForm.city}, {transferForm.state} {transferForm.zip}</div>
-                          <div style={reviewItem}><strong>TIN:</strong> ••••{transferForm.taxId.slice(-4)}</div>
+                          <input
+                            style={transferInput}
+                            placeholder="Account holder name"
+                            value={bankForm.accountHolder}
+                            onChange={(e) =>
+                              setBankForm((prev) => ({ ...prev, accountHolder: e.target.value }))
+                            }
+                          />
+                          <input
+                            style={transferInput}
+                            placeholder="Bank name"
+                            value={bankForm.bankName}
+                            onChange={(e) =>
+                              setBankForm((prev) => ({ ...prev, bankName: e.target.value }))
+                            }
+                          />
+                          <input
+                            style={transferInput}
+                            placeholder="Account number"
+                            value={bankForm.accountNumber}
+                            onChange={(e) =>
+                              setBankForm((prev) => ({ ...prev, accountNumber: e.target.value }))
+                            }
+                          />
+                          <input
+                            style={transferInput}
+                            placeholder="Routing number"
+                            value={bankForm.routingNumber}
+                            onChange={(e) =>
+                              setBankForm((prev) => ({ ...prev, routingNumber: e.target.value }))
+                            }
+                          />
+                          <input
+                            style={transferInput}
+                            type="email"
+                            placeholder="Email for transfer updates"
+                            value={bankForm.email}
+                            onChange={(e) =>
+                              setBankForm((prev) => ({ ...prev, email: e.target.value }))
+                            }
+                          />
                         </>
                       ) : (
                         <>
-                          <div style={reviewItem}><strong>Name:</strong> {w8BenForm.fullName}</div>
-                          <div style={reviewItem}><strong>Citizenship:</strong> {w8BenForm.countryOfCitizenship}</div>
-                          <div style={reviewItem}><strong>Address:</strong> {w8BenForm.permanentAddress}, {w8BenForm.city}, {w8BenForm.region} {w8BenForm.postalCode}, {w8BenForm.country}</div>
-                          <div style={reviewItem}><strong>DOB:</strong> {w8BenForm.dateOfBirth}</div>
+                          <input
+                            style={transferInput}
+                            placeholder="Full name"
+                            value={payPalForm.fullName}
+                            onChange={(e) =>
+                              setPayPalForm((prev) => ({ ...prev, fullName: e.target.value }))
+                            }
+                          />
+                          <input
+                            style={transferInput}
+                            type="email"
+                            placeholder="PayPal email"
+                            value={payPalForm.paypalEmail}
+                            onChange={(e) =>
+                              setPayPalForm((prev) => ({ ...prev, paypalEmail: e.target.value }))
+                            }
+                          />
                         </>
                       )}
                     </div>
@@ -860,36 +677,110 @@ export default function BetBurn() {
                       <button
                         style={transferSecondaryButton}
                         type="button"
-                        onClick={() => setTransferStage(taxResidency === "us" ? "w9" : "w8ben")}
+                        onClick={() => setTransferStage("method")}
                       >
-                        Edit
+                        Back
                       </button>
                       <button
                         style={transferPrimaryButton}
                         type="button"
-                        onClick={() => setTransferStage("submitted")}
+                        disabled={!detailsFormReady}
+                        onClick={() => setTransferStage("verify")}
                       >
-                        Submit
+                        Continue
                       </button>
                     </div>
                   </div>
                 </div>
               )}
 
-              {transferStage === "submitted" && (
+              {transferStage === "verify" && (
                 <div style={transferScene}>
-                  <div style={transferPanelSmall}>
-                    <div style={transferPanelTitle}>Submission Complete!</div>
-                    <div style={transferSubText}>
-                      Your tax form has been submitted successfully. You can continue with your transfer.
+                  <div style={transferPanelLarge}>
+                    <div style={transferPanelTitle}>Verify Your Identity</div>
+                    <div style={formGridSingle}>
+                      <input
+                        style={transferInput}
+                        placeholder="Legal name"
+                        value={identityForm.legalName}
+                        onChange={(e) =>
+                          setIdentityForm((prev) => ({ ...prev, legalName: e.target.value }))
+                        }
+                      />
+                      <input
+                        style={transferInput}
+                        placeholder="Address"
+                        value={identityForm.address}
+                        onChange={(e) =>
+                          setIdentityForm((prev) => ({ ...prev, address: e.target.value }))
+                        }
+                      />
+                      <div style={formGridTriple}>
+                        <input
+                          style={transferInput}
+                          placeholder="City"
+                          value={identityForm.city}
+                          onChange={(e) =>
+                            setIdentityForm((prev) => ({ ...prev, city: e.target.value }))
+                          }
+                        />
+                        <input
+                          style={transferInput}
+                          placeholder="State"
+                          value={identityForm.state}
+                          onChange={(e) =>
+                            setIdentityForm((prev) => ({ ...prev, state: e.target.value }))
+                          }
+                        />
+                        <input
+                          style={transferInput}
+                          placeholder="ZIP"
+                          value={identityForm.zip}
+                          onChange={(e) =>
+                            setIdentityForm((prev) => ({ ...prev, zip: e.target.value }))
+                          }
+                        />
+                      </div>
+                      <input
+                        style={transferInput}
+                        type="date"
+                        value={identityForm.dateOfBirth}
+                        onChange={(e) =>
+                          setIdentityForm((prev) => ({ ...prev, dateOfBirth: e.target.value }))
+                        }
+                      />
+                      <label style={attestationRow}>
+                        <input
+                          type="checkbox"
+                          checked={identityForm.attestationAccepted}
+                          onChange={(e) =>
+                            setIdentityForm((prev) => ({
+                              ...prev,
+                              attestationAccepted: e.target.checked,
+                            }))
+                          }
+                        />
+                        I confirm this information is accurate and I authorize ORC to process this withdrawal.
+                      </label>
                     </div>
-                    <button
-                      style={transferPrimaryButton}
-                      type="button"
-                      onClick={() => setTransferStage("confirm")}
-                    >
-                      Continue
-                    </button>
+
+                    <div style={transferActionsRow}>
+                      <button
+                        style={transferSecondaryButton}
+                        type="button"
+                        onClick={() => setTransferStage("details")}
+                      >
+                        Back
+                      </button>
+                      <button
+                        style={transferPrimaryButton}
+                        type="button"
+                        disabled={!identityFormReady}
+                        onClick={() => setTransferStage("confirm")}
+                      >
+                        Continue
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -897,28 +788,37 @@ export default function BetBurn() {
               {transferStage === "confirm" && (
                 <div style={transferScene}>
                   <div style={confirmTransferPanel}>
-                    <div style={confirmTransferTitle}>Confirm</div>
+                    <div style={confirmTransferTitle}>Confirm Withdrawal</div>
                     <div style={confirmTransferAmount}>{transferAmountLabel} USD</div>
 
                     <div style={confirmTransferGrid}>
-                      <span style={confirmTransferLabel}>To:</span>
-                      <span style={confirmTransferValue}>Off-Road Champion Wallet</span>
+                      <span style={confirmTransferLabel}>Method:</span>
+                      <span style={confirmTransferValue}>
+                        {transferMethod === "bank" ? "Bank Account" : "PayPal"}
+                      </span>
+                      <span style={confirmTransferLabel}>Destination:</span>
+                      <span style={confirmTransferValue}>{withdrawalEmail}</span>
                       <span style={confirmTransferLabel}>From:</span>
-                      <span style={confirmTransferValue}>USD Wallet</span>
+                      <span style={confirmTransferValue}>ORC Wallet</span>
                       <span style={confirmTransferLabel}>Funds will arrive:</span>
-                      <span style={confirmTransferValue}>Instantly</span>
+                      <span style={confirmTransferValue}>1-3 business days</span>
                       <span style={confirmTransferLabel}>Fee:</span>
-                      <span style={confirmTransferValue}>$0.00</span>
+                      <span style={confirmTransferValue}>Processed by payout provider</span>
                       <span style={confirmTransferLabel}>Total:</span>
                       <span style={confirmTransferValue}>{transferAmountLabel}</span>
                     </div>
 
+                    {transferSubmitErr && (
+                      <div style={transferValidationText}>{transferSubmitErr}</div>
+                    )}
+
                     <button
                       style={transferPrimaryButton}
                       type="button"
-                      onClick={submitTransfer}
+                      onClick={() => void submitTransfer()}
+                      disabled={transferSubmitting}
                     >
-                      Transfer
+                      {transferSubmitting ? "Submitting..." : "Submit Withdrawal"}
                     </button>
                   </div>
                 </div>
@@ -1018,29 +918,10 @@ export default function BetBurn() {
                       setAddCashStage("entry");
                     }}
                     onSuccess={() => {
-                      const baselineGains = profile?.gains ?? 0;
-                      const gmToAdd = parsedAddCashAmount / USD_PER_GM;
-                      const expectedGains = Number((baselineGains + gmToAdd).toFixed(2));
-
-                      setProfile((prev) => {
-                        if (!prev) return prev;
-                        return {
-                          ...prev,
-                          gains: Number((prev.gains + gmToAdd).toFixed(2)),
-                        };
-                      });
-
-                      const successTx: TransactionItem = {
-                        id: `stripe-${Date.now()}`,
-                        label: "Add Cash",
-                        source: "Stripe",
-                        amountLabel: `+$${parsedAddCashAmount.toFixed(2)}`,
-                        kind: "pos",
-                      };
-                      setTransactions((prev) => [successTx, ...prev]);
+                      // Stripe webhook finalizes wallet credit server-side.
+                      // UI switches to success and refreshes authoritative data.
                       setAddCashStage("success");
-
-                      void safeSyncProfileAfterMutation(expectedGains);
+                      void loadWalletData();
                     }}
                   />
                 </Elements>
@@ -1053,9 +934,9 @@ export default function BetBurn() {
                       <path d="M12 2 3 7v2h18V7l-9-5Zm7 8H5v8h2v-6h2v6h2v-6h2v6h2v-6h2v6h2v-8ZM3 21h18v-2H3v2Z" />
                     </svg>
                   </div>
-                  <div style={successTitle}>Your transaction has been sent.</div>
+                  <div style={successTitle}>Payment submitted.</div>
                   <div style={successSub}>
-                    We&apos;ll notify you when your transaction is complete. You can check your account for updates.
+                    Your wallet will update after Stripe webhook confirmation. Refresh or check transactions shortly.
                   </div>
                   <button
                     style={successButton}
@@ -1106,8 +987,9 @@ export default function BetBurn() {
             </div>
           )}
         </div>
-      </div>
+      )}
     </div>
+  </div>
   );
 }
 
@@ -1142,33 +1024,90 @@ const headerBar: React.CSSProperties = {
   alignItems: "flex-start",
 };
 
-const devActions: React.CSSProperties = {
+const logoutButton: React.CSSProperties = {
+  height: 36,
+  minWidth: 90,
+  borderRadius: 999,
+  border: "1.5px solid rgba(247,208,35,0.4)",
+  background: "transparent",
+  color: "#F7D023",
+  fontWeight: 700,
+  fontSize: 13,
+  padding: "0 16px",
+  marginRight: 56,
+  cursor: "pointer",
+};
+
+const loginPanel: React.CSSProperties = {
+  width: "min(420px, 92vw)",
+  marginTop: 64,
+  background: "rgba(255,255,255,0.04)",
+  border: "1px solid rgba(255,255,255,0.10)",
+  borderRadius: 20,
+  padding: 36,
   display: "flex",
   flexDirection: "column",
-  alignItems: "flex-end",
+  gap: 0,
+};
+
+const loginTitle: React.CSSProperties = {
+  fontWeight: 700,
+  fontSize: 28,
+  color: "#F7D023",
+  marginBottom: 28,
+  textAlign: "center",
+};
+
+const loginForm: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 18,
+};
+
+const loginField: React.CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
   gap: 6,
 };
 
-const devLoginButton: React.CSSProperties = {
-  height: 32,
-  minWidth: 132,
-  borderRadius: 999,
-  border: "none",
-  background: "rgba(0,82,180,0.95)",
-  color: "#fff",
-  fontWeight: 700,
-  padding: "0 12px",
-  cursor: "pointer",
-  fontSize: 12,
+const loginLabel: React.CSSProperties = {
+  fontSize: 13,
+  fontWeight: 600,
+  color: "rgba(255,255,255,0.65)",
+  letterSpacing: "0.02em",
 };
 
-const devLoginError: React.CSSProperties = {
-  color: "salmon",
-  fontSize: 11,
-  fontWeight: 600,
-  maxWidth: 220,
-  textAlign: "right",
+const loginInput: React.CSSProperties = {
+  height: 48,
+  borderRadius: 10,
+  border: "1px solid rgba(255,255,255,0.18)",
+  background: "rgba(255,255,255,0.07)",
+  color: "#fff",
+  fontSize: 15,
+  padding: "0 14px",
+  outline: "none",
 };
+
+const loginError: React.CSSProperties = {
+  color: "salmon",
+  fontSize: 13,
+  fontWeight: 600,
+  marginTop: -6,
+};
+
+const loginSubmitBtn: React.CSSProperties = {
+  height: 50,
+  borderRadius: 999,
+  border: "none",
+  background: "#FFBD17",
+  color: "#000",
+  fontWeight: 700,
+  fontSize: 16,
+  cursor: "pointer",
+  marginTop: 6,
+};
+
+
 
 const brandRow: React.CSSProperties = {
   display: "flex",

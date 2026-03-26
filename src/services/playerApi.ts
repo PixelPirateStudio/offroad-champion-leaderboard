@@ -133,6 +133,52 @@ class PlayerApiService {
     if (!r.ok) throw new Error(data?.message || "Failed to fetch redemptions");
     return data;
   }
+
+  async createStripePaymentIntent(params: { amountUsd: number }) {
+    if (USE_MOCK_API) {
+      return {
+        clientSecret: "pi_mock_secret",
+        paymentIntentId: `pi_mock_${Date.now()}`,
+      };
+    }
+
+    const r = await fetch(`${this.baseUrl}/api/v2/stripe/payment-intents`, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({ amountUsd: params.amountUsd }),
+    });
+
+    const data = await r.json();
+    if (!r.ok) throw new Error(data?.message || data?.error || "Failed to create payment intent");
+    return data;
+  }
+
+  async createRedemption(params: { amount: number; email: string }) {
+    if (USE_MOCK_API) {
+      return {
+        redemptionId: `mock-redemption-${Date.now()}`,
+        status: "pending",
+        amount: params.amount,
+        email: params.email,
+      };
+    }
+
+    if (!this.profileId) throw new Error("Missing profileId");
+
+    const r = await fetch(`${this.baseUrl}/api/v2/redemptions`, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({
+        profileId: this.profileId,
+        amount: params.amount,
+        email: params.email,
+      }),
+    });
+
+    const data = await r.json();
+    if (!r.ok) throw new Error(data?.message || "Failed to create redemption");
+    return data;
+  }
 }
 
 export const playerApi = new PlayerApiService();
