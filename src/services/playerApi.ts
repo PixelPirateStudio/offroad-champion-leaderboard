@@ -153,6 +153,26 @@ class PlayerApiService {
     return data;
   }
 
+  async finalizeStripePaymentIntent(params: { paymentIntentId: string }) {
+    if (USE_MOCK_API) {
+      return {
+        success: true,
+        finalized: true,
+        paymentIntentId: params.paymentIntentId,
+        alreadyProcessed: false,
+      };
+    }
+
+    const r = await fetch(`${this.baseUrl}/api/v2/stripe/payment-intents/${params.paymentIntentId}/finalize`, {
+      method: "POST",
+      headers: this.headers(),
+    });
+
+    const data = await r.json();
+    if (!r.ok) throw new Error(data?.message || data?.error || "Failed to finalize payment");
+    return data;
+  }
+
   async createRedemption(params: { amount: number; email: string }) {
     if (USE_MOCK_API) {
       return {

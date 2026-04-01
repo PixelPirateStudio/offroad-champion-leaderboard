@@ -72,6 +72,7 @@ export default function BetBurn() {
   const [addCashAmount, setAddCashAmount] = useState<string>("0.00");
   const [addCashStage, setAddCashStage] = useState<AddCashStage>("entry");
   const [stripeClientSecret, setStripeClientSecret] = useState<string | null>(null);
+  const [stripePaymentIntentId, setStripePaymentIntentId] = useState<string | null>(null);
   const [addCashErr, setAddCashErr] = useState<string | null>(null);
   const [addCashLoading, setAddCashLoading] = useState(false);
   const [transactions, setTransactions] = useState<TransactionItem[]>([]);
@@ -236,6 +237,7 @@ export default function BetBurn() {
     if (tab !== "add cash") {
       setAddCashStage("entry");
       setStripeClientSecret(null);
+      setStripePaymentIntentId(null);
       setAddCashErr(null);
       setAddCashLoading(false);
     }
@@ -312,7 +314,12 @@ export default function BetBurn() {
         throw new Error("Stripe client secret is missing");
       }
 
+      if (!data.paymentIntentId) {
+        throw new Error("Stripe payment intent id is missing");
+      }
+
       setStripeClientSecret(data.clientSecret);
+      setStripePaymentIntentId(data.paymentIntentId);
       setAddCashStage("payment");
     } catch (e: unknown) {
       setAddCashErr(e instanceof Error ? e.message : "Unable to start Stripe flow");
@@ -908,18 +915,20 @@ export default function BetBurn() {
                 </>
               )}
 
-              {addCashStage === "payment" && stripeClientSecret && (
+              {addCashStage === "payment" && stripeClientSecret && stripePaymentIntentId && (
                 <Elements stripe={stripePromise} options={{ clientSecret: stripeClientSecret }}>
                   <AddCashStripeFlow
                     amountUsd={parsedAddCashAmount}
                     onBack={() => {
                       setAddCashErr(null);
                       setStripeClientSecret(null);
+                      setStripePaymentIntentId(null);
                       setAddCashStage("entry");
                     }}
+                    paymentIntentId={stripePaymentIntentId}
                     onSuccess={() => {
-                      // Stripe webhook finalizes wallet credit server-side.
-                      // UI switches to success and refreshes authoritative data.
+                      // Wallet credit is finalized server-side after Stripe confirmation.
+                      // UI then refreshes profile and transactions.
                       setAddCashStage("success");
                       void loadWalletData();
                     }}
@@ -945,6 +954,7 @@ export default function BetBurn() {
                       setTab("wallet");
                       setAddCashStage("entry");
                       setStripeClientSecret(null);
+                      setStripePaymentIntentId(null);
                     }}
                   >
                     View your account

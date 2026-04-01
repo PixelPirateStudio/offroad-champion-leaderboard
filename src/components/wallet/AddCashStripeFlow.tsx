@@ -1,16 +1,19 @@
 import { useState } from "react";
 import { PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
+import { playerApi } from "@/services/playerApi";
 
 type StripeStep = "payment" | "confirm";
 
 type AddCashStripeFlowProps = {
   amountUsd: number;
+  paymentIntentId: string;
   onBack: () => void;
   onSuccess: () => void;
 };
 
 export default function AddCashStripeFlow({
   amountUsd,
+  paymentIntentId,
   onBack,
   onSuccess,
 }: AddCashStripeFlowProps) {
@@ -65,8 +68,21 @@ export default function AddCashStripeFlow({
       status === "processing" ||
       status === "requires_capture"
     ) {
-      onSuccess();
-      return;
+      try {
+        await playerApi.finalizeStripePaymentIntent({
+          paymentIntentId: result.paymentIntent?.id || paymentIntentId,
+        });
+        onSuccess();
+        return;
+      } catch (finalizeError) {
+        setError(
+          finalizeError instanceof Error
+            ? finalizeError.message
+            : "Payment completed, but wallet finalization failed. Please refresh and try again."
+        );
+        setBusy(false);
+        return;
+      }
     }
 
     if (!status) {
