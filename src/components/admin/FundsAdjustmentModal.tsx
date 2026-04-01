@@ -24,11 +24,12 @@ export function FundsAdjustmentModal({
   currentFunds,
 }: FundsAdjustmentModalProps) {
   const [coins, setCoins] = useState(currentFunds.coins.toString());
-  const [gains, setGains] = useState(currentFunds.gains.toString());
-  const [coinsTemporal, setCoinsTemporal] = useState(currentFunds.coinsTemporal.toString());
   const [reason, setReason] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  // Calculate dollar equivalent for display (2 coins = $1)
+  const dollarEquivalent = (parseFloat(coins) || 0) / 2;
 
   if (!isOpen) return null;
 
@@ -41,16 +42,14 @@ export function FundsAdjustmentModal({
     }
 
     const coinsNum = parseFloat(coins);
-    const gainsNum = parseFloat(gains);
-    const coinsTemporalNum = parseFloat(coinsTemporal);
 
-    if (isNaN(coinsNum) || isNaN(gainsNum) || isNaN(coinsTemporalNum)) {
-      setError('All fund values must be valid numbers');
+    if (isNaN(coinsNum)) {
+      setError('Coins value must be a valid number');
       return;
     }
 
-    if (coinsNum < 0 || gainsNum < 0 || coinsTemporalNum < 0) {
-      setError('Fund values cannot be negative');
+    if (coinsNum < 0) {
+      setError('Coins value cannot be negative');
       return;
     }
 
@@ -60,8 +59,6 @@ export function FundsAdjustmentModal({
     try {
       await onConfirm({
         coins: coinsNum,
-        gains: gainsNum,
-        coinsTemporal: coinsTemporalNum,
         reason,
       });
       handleClose();
@@ -74,8 +71,6 @@ export function FundsAdjustmentModal({
 
   const handleClose = () => {
     setCoins(currentFunds.coins.toString());
-    setGains(currentFunds.gains.toString());
-    setCoinsTemporal(currentFunds.coinsTemporal.toString());
     setReason('');
     setError('');
     onClose();
@@ -97,7 +92,7 @@ export function FundsAdjustmentModal({
           <form onSubmit={handleSubmit}>
             <div className="bg-[#0E0A1B] px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
               <div className="flex items-start justify-between mb-4">
-                <h3 className="text-lg font-medium text-white">Adjust Player Funds</h3>
+                <h3 className="text-lg font-medium text-white">Adjust Player Coins</h3>
                 <button
                   type="button"
                   onClick={handleClose}
@@ -108,9 +103,19 @@ export function FundsAdjustmentModal({
               </div>
 
               <p className="text-sm text-gray-400 mb-4">
-                Enter the new absolute values for each fund type. These will replace the current
-                values.
+                Enter the new absolute coin value. This will replace the current coin balance.
               </p>
+
+              {/* Conversion Guide */}
+              <div className="mb-4 rounded-md bg-blue-900/20 border border-blue-500/30 p-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-blue-200 font-medium">Conversion Reference:</p>
+                  <p className="text-sm text-blue-300">2 Coins = $1</p>
+                </div>
+                <p className="text-xs text-blue-300/70 mt-1">
+                  Current input value: ${dollarEquivalent.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              </div>
 
               {error && (
                 <div className="mb-4 rounded-md bg-red-900/30 border border-red-500/50 p-3">
@@ -140,49 +145,6 @@ export function FundsAdjustmentModal({
                 </div>
 
                 <div>
-                  <label htmlFor="gains" className="block text-sm font-medium text-gray-300 mb-2">
-                    Gains ($)
-                  </label>
-                  <input
-                    type="number"
-                    id="gains"
-                    value={gains}
-                    onChange={(e) => setGains(e.target.value)}
-                    className="w-full px-3 py-2 bg-[#190F31] border border-purple-900/30 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                    placeholder="0.00"
-                    min="0"
-                    step="0.01"
-                    required
-                  />
-                  <p className="mt-1 text-xs text-gray-500">
-                    Current: ${currentFunds.gains.toFixed(2)}
-                  </p>
-                </div>
-
-                <div>
-                  <label
-                    htmlFor="coinsTemporal"
-                    className="block text-sm font-medium text-gray-300 mb-2"
-                  >
-                    Coins Temporal
-                  </label>
-                  <input
-                    type="number"
-                    id="coinsTemporal"
-                    value={coinsTemporal}
-                    onChange={(e) => setCoinsTemporal(e.target.value)}
-                    className="w-full px-3 py-2 bg-[#190F31] border border-purple-900/30 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                    placeholder="0"
-                    min="0"
-                    step="1"
-                    required
-                  />
-                  <p className="mt-1 text-xs text-gray-500">
-                    Current: {currentFunds.coinsTemporal.toLocaleString()}
-                  </p>
-                </div>
-
-                <div>
                   <label htmlFor="reason" className="block text-sm font-medium text-gray-300 mb-2">
                     Reason
                   </label>
@@ -205,7 +167,7 @@ export function FundsAdjustmentModal({
                 disabled={isSubmitting}
                 className="w-full inline-flex justify-center rounded-lg border border-transparent shadow-sm px-4 py-2 bg-purple-600 text-base font-medium text-white hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 sm:ml-3 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isSubmitting ? 'Adjusting...' : 'Adjust Funds'}
+                {isSubmitting ? 'Adjusting...' : 'Adjust Coins'}
               </button>
               <button
                 type="button"

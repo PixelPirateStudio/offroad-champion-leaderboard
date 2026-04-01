@@ -13,6 +13,7 @@ import {
 interface Player {
   id: string;
   username: string;
+  email: string;
   name: string;
   country: string;
   isFrozen: boolean;
@@ -196,6 +197,9 @@ export default function PlayersPage() {
                         Player
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+                        Email
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
                         Country
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
@@ -220,6 +224,9 @@ export default function PlayersPage() {
                             <div className="text-sm font-medium text-white">{player.username}</div>
                             <div className="text-sm text-gray-400">{player.name}</div>
                           </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                          {player.email || 'N/A'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
                           {player.country || 'N/A'}

@@ -262,7 +262,7 @@ export default function PlayerDetailPage() {
             className="inline-flex items-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
           >
             <BanknotesIcon className="h-5 w-5 mr-2" />
-            Adjust Funds
+            Adjust Coins
           </button>
         </div>
 
