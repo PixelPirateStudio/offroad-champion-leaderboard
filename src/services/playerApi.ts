@@ -199,6 +199,37 @@ class PlayerApiService {
     if (!r.ok) throw new Error(data?.message || "Failed to create redemption");
     return data;
   }
+
+  async getConnectStatus(): Promise<{ complete: boolean; chargesEnabled: boolean; payoutsEnabled: boolean; requirements: unknown }> {
+    if (USE_MOCK_API) {
+      return { complete: false, chargesEnabled: false, payoutsEnabled: false, requirements: null };
+    }
+
+    const r = await fetch(`${this.baseUrl}/api/v2/redemptions/connect/status`, {
+      method: "GET",
+      headers: this.headers(),
+    });
+
+    const data = await r.json();
+    if (!r.ok) throw new Error(data?.message || "Failed to fetch connect status");
+    return data;
+  }
+
+  async getConnectOnboardingUrl(params: { returnUrl: string; refreshUrl: string }): Promise<{ onboardingUrl: string }> {
+    if (USE_MOCK_API) {
+      return { onboardingUrl: "#" };
+    }
+
+    const r = await fetch(`${this.baseUrl}/api/v2/redemptions/connect/onboarding`, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify(params),
+    });
+
+    const data = await r.json();
+    if (!r.ok) throw new Error(data?.message || "Failed to get onboarding link");
+    return data;
+  }
 }
 
 export const playerApi = new PlayerApiService();

@@ -266,6 +266,63 @@ class AdminApiService {
       `/api/v2/admin/players/${userId}/races?${queryParams.toString()}`
     );
   }
+
+  // Redemption Management
+  async getRedemptions(
+    params: {
+      status?: string;
+      userId?: string;
+      limit?: number;
+      offset?: number;
+    } = {}
+  ) {
+    const queryParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined) {
+        queryParams.append(key, String(value));
+      }
+    });
+    return this.fetchWithAuth(
+      `/api/v2/redemptions/admin/all?${queryParams.toString()}`
+    );
+  }
+
+  async processRedemption(redemptionId: string) {
+    return this.fetchWithAuth(
+      `/api/v2/redemptions/admin/${redemptionId}/process`,
+      { method: "POST" }
+    );
+  }
+
+  async completeRedemption(redemptionId: string, payoutTransactionId: string, notes?: string) {
+    return this.fetchWithAuth(
+      `/api/v2/redemptions/admin/${redemptionId}/complete`,
+      {
+        method: "POST",
+        body: JSON.stringify({ payoutTransactionId, notes }),
+      }
+    );
+  }
+
+  async failRedemption(redemptionId: string, failureReason: string) {
+    return this.fetchWithAuth(
+      `/api/v2/redemptions/admin/${redemptionId}/fail`,
+      {
+        method: "POST",
+        body: JSON.stringify({ failureReason }),
+      }
+    );
+  }
+
+  async refundRedemption(redemptionId: string, reason: string) {
+    return this.fetchWithAuth(
+      `/api/v2/redemptions/admin/${redemptionId}/refund`,
+      {
+        method: "POST",
+        body: JSON.stringify({ reason }),
+      }
+    );
+  }
 }
 
 export const adminApi = new AdminApiService();

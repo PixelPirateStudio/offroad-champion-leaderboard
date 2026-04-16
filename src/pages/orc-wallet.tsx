@@ -103,6 +103,9 @@ export default function BetBurn() {
   });
   const [transferSubmitting, setTransferSubmitting] = useState(false);
   const [transferSubmitErr, setTransferSubmitErr] = useState<string | null>(null);
+  const [connectStatus, setConnectStatus] = useState<{ complete: boolean; chargesEnabled: boolean; payoutsEnabled: boolean } | null>(null);
+  const [connectLoading, setConnectLoading] = useState(false);
+  const [connectErr, setConnectErr] = useState<string | null>(null);
 
   const mapProfile = (p: Partial<Profile>): Profile => ({
     gains: Number(p.gains) || 0,
@@ -216,7 +219,18 @@ export default function BetBurn() {
         } as TransactionItem;
       });
 
-      setTransactions(mapped);
+      setTransactions((prev) => {
+        const optimistic = prev.filter(
+          (tx) => tx.id.startsWith("stripe-") || tx.id.startsWith("transfer-")
+        );
+        const merged = [...optimistic];
+        for (const tx of mapped) {
+          if (!merged.some((item) => item.id === tx.id)) {
+            merged.push(tx);
+          }
+        }
+        return merged;
+      });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "Failed to load wallet data";
       setErr(message);
@@ -224,12 +238,29 @@ export default function BetBurn() {
     } finally {
       setTxLoading(false);
     }
+
+    // Load Stripe Connect status in the background (non-blocking)
+    playerApi.getConnectStatus().then(setConnectStatus).catch(() => {});
   };
 
   useEffect(() => {
     if (typeof window !== "undefined" && localStorage.getItem("playerToken")) {
       setIsAuthenticated(true);
       loadWalletData();
+    }
+  }, []);
+
+  // After Stripe Connect onboarding redirect, refresh connect status
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const connectParam = params.get("connect");
+    if ((connectParam === "return" || connectParam === "refresh") && localStorage.getItem("playerToken")) {
+      playerApi.getConnectStatus().then(setConnectStatus).catch(() => {});
+      // Clean up the query param without a full page reload
+      const url = new URL(window.location.href);
+      url.searchParams.delete("connect");
+      window.history.replaceState({}, "", url.toString());
     }
   }, []);
 
@@ -545,6 +576,49 @@ export default function BetBurn() {
 
               {transferStage === "method" && (
                 <div style={transferScene}>
+                  {/* Stripe Connect onboarding gate */}
+                  {connectStatus && !connectStatus.complete ? (
+                    <div style={transferPanel}>
+                      <div style={transferPanelTitle}>Set Up Payout Account</div>
+                      <p style={{ color: "#555", fontSize: 14, marginBottom: 16, lineHeight: 1.5 }}>
+                        Before you can withdraw, you need to connect a bank account via Stripe.
+                        This is a one-time setup and keeps your banking details secure.
+                      </p>
+                      {connectErr && <div style={{ color: "#c00", fontSize: 13, marginBottom: 12 }}>{connectErr}</div>}
+                      <div style={transferActionsRow}>
+                        <button
+                          style={transferSecondaryButton}
+                          type="button"
+                          onClick={() => setTransferStage("none")}
+                        >
+                          Back
+                        </button>
+                        <button
+                          style={transferPrimaryButton}
+                          type="button"
+                          disabled={connectLoading}
+                          onClick={async () => {
+                            setConnectLoading(true);
+                            setConnectErr(null);
+                            try {
+                              const origin = window.location.origin;
+                              const { onboardingUrl } = await playerApi.getConnectOnboardingUrl({
+                                returnUrl: `${origin}/orc-wallet?connect=return`,
+                                refreshUrl: `${origin}/orc-wallet?connect=refresh`,
+                              });
+                              window.location.href = onboardingUrl;
+                            } catch (e) {
+                              setConnectErr(e instanceof Error ? e.message : "Failed to start onboarding");
+                            } finally {
+                              setConnectLoading(false);
+                            }
+                          }}
+                        >
+                          {connectLoading ? "Loading..." : "Set Up Bank Account"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
                   <div style={transferPanel}>
                     <div style={transferPanelTitle}>Choose Withdrawal Method</div>
                     <div style={classificationList}>
@@ -602,6 +676,7 @@ export default function BetBurn() {
                       </button>
                     </div>
                   </div>
+                  )}
                 </div>
               )}
 
@@ -928,7 +1003,15 @@ export default function BetBurn() {
                     paymentIntentId={stripePaymentIntentId}
                     onSuccess={() => {
                       // Wallet credit is finalized server-side after Stripe confirmation.
-                      // UI then refreshes profile and transactions.
+                      // Add an optimistic deposit entry so it appears immediately in transactions.
+                      const depositTx: TransactionItem = {
+                        id: `stripe-${stripePaymentIntentId || Date.now()}`,
+                        label: "Cash Added",
+                        source: "Stripe",
+                        amountLabel: `+$${parsedAddCashAmount.toFixed(2)}`,
+                        kind: "pos",
+                      };
+                      setTransactions((prev) => [depositTx, ...prev]);
                       setAddCashStage("success");
                       void loadWalletData();
                     }}
@@ -968,6 +1051,18 @@ export default function BetBurn() {
             <div style={txWrap}>
               {txLoading && <div style={txEmptyText}>Loading transactions…</div>}
               {txErr && <div style={txErrorText}>{txErr}</div>}
+
+              {!txLoading && !txErr && transactions.length > 0 && (
+                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+                  <button
+                    type="button"
+                    style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", fontSize: 12, cursor: "pointer", padding: "2px 4px" }}
+                    onClick={() => setTransactions([])}
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
 
               {!txLoading && !txErr && transactions.length === 0 && (
                 <div style={txEmptyText}>No transactions yet.</div>
