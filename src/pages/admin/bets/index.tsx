@@ -110,6 +110,10 @@ export default function BetsPage() {
   const [revenuePeriod, setRevenuePeriod] = useState<'weekly' | 'monthly' | 'yearly'>('weekly');
   const [taxStatus, setTaxStatus] = useState<'pending' | 'filed' | 'completed'>('pending');
 
+  // Player filter state
+  const [playerSearch, setPlayerSearch] = useState('');
+  const [resolvedPlayerId, setResolvedPlayerId] = useState<string | null>(null);
+
   // Data state
   const [openBets, setOpenBets] = useState<Bet[]>([]);
   const [liveBets, setLiveBets] = useState<Bet[]>([]);
@@ -126,15 +130,78 @@ export default function BetsPage() {
 
   const limit = 10;
 
+  // Helper function to check if string is a valid UUID
+  const isValidUUID = (str: string) => {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(str);
+  };
+
+  // Search for player by username and get their ID
+  const searchPlayerByUsername = async (searchTerm: string) => {
+    try {
+      const response = await adminApi.getPlayers({
+        search: searchTerm,
+        limit: 1,
+      }) as { players: Array<{ id: string; username: string }>; total: number };
+
+      if (response.players && response.players.length > 0) {
+        return response.players[0].id;
+      }
+      return null;
+    } catch (err) {
+      console.error('Failed to search for player:', err);
+      return null;
+    }
+  };
+
+  // Resolve player search to ID
+  useEffect(() => {
+    const resolvePlayerId = async () => {
+      if (!playerSearch.trim()) {
+        setResolvedPlayerId(null);
+        return;
+      }
+
+      // If it's already a valid UUID, use it directly
+      if (isValidUUID(playerSearch.trim())) {
+        setResolvedPlayerId(playerSearch.trim());
+        return;
+      }
+
+      // Otherwise, search for player by username
+      const playerId = await searchPlayerByUsername(playerSearch.trim());
+      setResolvedPlayerId(playerId);
+    };
+
+    // Debounce the search
+    const timeoutId = setTimeout(() => {
+      resolvePlayerId();
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [playerSearch]);
+
   // Fetch open bets (status: 'open')
   const fetchOpenBets = async () => {
     try {
       setError(null);
-      const response = await adminApi.getAllBets({
+      const params: {
+        status: 'open';
+        limit: number;
+        offset: number;
+        creatorId?: string;
+      } = {
         status: 'open',
         limit,
         offset: page * limit,
-      }) as BetsResponse;
+      };
+
+      // Add player filter if we have a resolved player ID
+      if (resolvedPlayerId) {
+        params.creatorId = resolvedPlayerId;
+      }
+
+      const response = await adminApi.getAllBets(params) as BetsResponse;
 
       setOpenBets(response.bets || []);
       setOpenTotal(response.total || 0);
@@ -150,11 +217,23 @@ export default function BetsPage() {
   const fetchLiveBets = async () => {
     try {
       setError(null);
-      const response = await adminApi.getAllBets({
+      const params: {
+        status: 'active';
+        limit: number;
+        offset: number;
+        creatorId?: string;
+      } = {
         status: 'active',
         limit,
         offset: page * limit,
-      }) as BetsResponse;
+      };
+
+      // Add player filter if we have a resolved player ID
+      if (resolvedPlayerId) {
+        params.creatorId = resolvedPlayerId;
+      }
+
+      const response = await adminApi.getAllBets(params) as BetsResponse;
 
       setLiveBets(response.bets || []);
       setLiveTotal(response.total || 0);
@@ -217,10 +296,10 @@ export default function BetsPage() {
     }
   };
 
-  // Reset page when changing tabs
+  // Reset page when changing tabs or resolved player ID
   useEffect(() => {
     setPage(0);
-  }, [activeTab]);
+  }, [activeTab, resolvedPlayerId]);
 
   // Fetch metrics when period changes
   useEffect(() => {
@@ -229,13 +308,13 @@ export default function BetsPage() {
     }
   }, [isAuthenticated, betsPeriod, activeTab]);
 
-  // Fetch data when authenticated, tab changes, or page changes
+  // Fetch data when authenticated, tab changes, page changes, or resolved player ID changes
   useEffect(() => {
     if (isAuthenticated && activeTab !== 'tax') {
       setIsLoading(true);
       fetchData();
     }
-  }, [isAuthenticated, activeTab, page]);
+  }, [isAuthenticated, activeTab, page, resolvedPlayerId]);
 
   // Auto-refresh for open and live bets
   useEffect(() => {
@@ -247,7 +326,7 @@ export default function BetsPage() {
 
       return () => clearInterval(interval);
     }
-  }, [isAuthenticated, activeTab, page, betsPeriod]);
+  }, [isAuthenticated, activeTab, page, betsPeriod, resolvedPlayerId]);
 
   // Manual refresh handler
   const handleManualRefresh = () => {
@@ -368,6 +447,46 @@ export default function BetsPage() {
             Tax Forms
           </button>
         </div>
+
+        {/* Search Bar - For Open and Live Bets */}
+        {activeTab !== 'tax' && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-4">
+              <div className="flex-1 max-w-md">
+                <input
+                  type="text"
+                  placeholder="Filter by Player ID or Username..."
+                  value={playerSearch}
+                  onChange={(e) => setPlayerSearch(e.target.value)}
+                  className="w-full px-4 py-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-yellow-500 placeholder-gray-400"
+                />
+              </div>
+              {playerSearch && (
+                <button
+                  onClick={() => setPlayerSearch('')}
+                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded border border-gray-600 transition-all"
+                >
+                  Clear Filter
+                </button>
+              )}
+            </div>
+            {playerSearch && !resolvedPlayerId && !isValidUUID(playerSearch) && (
+              <div className="text-sm text-yellow-400 ml-1">
+                Searching for player "{playerSearch}"...
+              </div>
+            )}
+            {playerSearch && !resolvedPlayerId && isValidUUID(playerSearch) && (
+              <div className="text-sm text-blue-400 ml-1">
+                Filtering by Player ID
+              </div>
+            )}
+            {playerSearch && resolvedPlayerId && !isValidUUID(playerSearch) && (
+              <div className="text-sm text-green-400 ml-1">
+                Showing bets for player (ID: {resolvedPlayerId.substring(0, 8)}...)
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Metrics - Conditional rendering based on active tab */}
         {activeTab !== 'tax' ? (
