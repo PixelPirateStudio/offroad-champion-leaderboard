@@ -305,6 +305,30 @@ class AdminApiService {
       body: JSON.stringify({ reason }),
     });
   }
+
+  // Tournament Wins
+  async getTournamentWins(
+    params: {
+      userId?: string;
+      username?: string;
+      profileId?: string;
+      period?: 'daily' | 'weekly' | 'monthly';
+      mode?: 'singleplayer' | 'multiplayer';
+      limit?: number;
+      offset?: number;
+    } = {}
+  ) {
+    const queryParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined) {
+        queryParams.append(key, String(value));
+      }
+    });
+
+    return this.fetchWithAuth(
+      `/api/v2/tournament/tournament-wins?${queryParams.toString()}`
+    );
+  }
 }
 
 export const adminApi = new AdminApiService();

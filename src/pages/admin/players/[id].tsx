@@ -11,6 +11,7 @@ import {
   ShieldExclamationIcon,
   ShieldCheckIcon,
   BanknotesIcon,
+  TrophyIcon,
 } from '@heroicons/react/24/outline';
 import dayjs from 'dayjs';
 
@@ -64,6 +65,46 @@ interface PlayerDetailResponse {
   transactions: Transaction[];
 }
 
+interface TournamentWin {
+  tournamentId: string;
+  period: 'daily' | 'weekly' | 'monthly';
+  mode: 'singleplayer' | 'multiplayer';
+  startDate: string;
+  endDate: string;
+  winningTime: number;
+  prizeAmount: number;
+  totalParticipants: number;
+  qualifiedParticipants: number;
+}
+
+interface TournamentWinsResponse {
+  player: {
+    userId: string;
+    profileId: string;
+    username: string;
+  };
+  tournamentWins: TournamentWin[];
+  summary: {
+    totalWins: number;
+    byPeriod: {
+      daily: number;
+      weekly: number;
+      monthly: number;
+    };
+    byMode: {
+      singleplayer: number;
+      multiplayer: number;
+    };
+    totalPrizesMoney: number;
+  };
+  pagination: {
+    total: number;
+    limit: number;
+    offset: number;
+    hasMore: boolean;
+  };
+}
+
 export default function PlayerDetailPage() {
   const router = useRouter();
   const { id } = router.query;
@@ -75,6 +116,9 @@ export default function PlayerDetailPage() {
   const [races, setRaces] = useState<RaceValidation[]>([]);
   const [racesLoading, setRacesLoading] = useState(false);
   const [showRaces, setShowRaces] = useState(false);
+  const [tournamentWins, setTournamentWins] = useState<TournamentWinsResponse | null>(null);
+  const [tournamentWinsLoading, setTournamentWinsLoading] = useState(false);
+  const [showTournamentWins, setShowTournamentWins] = useState(false);
 
   // Modals
   const [showFreezeModal, setShowFreezeModal] = useState(false);
@@ -164,6 +208,26 @@ export default function PlayerDetailPage() {
       loadRaces();
     }
     setShowRaces(!showRaces);
+  };
+
+  const loadTournamentWins = async () => {
+    if (!id) return;
+    try {
+      setTournamentWinsLoading(true);
+      const result = await adminApi.getTournamentWins({ userId: id as string }) as TournamentWinsResponse;
+      setTournamentWins(result);
+    } catch (err) {
+      console.error('Failed to load tournament wins:', err);
+    } finally {
+      setTournamentWinsLoading(false);
+    }
+  };
+
+  const toggleTournamentWins = () => {
+    if (!showTournamentWins && !tournamentWins) {
+      loadTournamentWins();
+    }
+    setShowTournamentWins(!showTournamentWins);
   };
 
   if (authLoading || loading) {
@@ -460,6 +524,131 @@ export default function PlayerDetailPage() {
                 </div>
               ) : (
                 <p className="text-gray-400 text-sm">No races found</p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Tournament Wins Section */}
+        <div className="bg-[#0E0A1B] border border-purple-900/30 rounded-lg p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center">
+              <TrophyIcon className="h-6 w-6 text-yellow-400 mr-3" />
+              <h2 className="text-xl font-semibold text-white">Tournament Wins</h2>
+            </div>
+            <button
+              onClick={toggleTournamentWins}
+              className="text-purple-400 hover:text-purple-300 text-sm"
+            >
+              {showTournamentWins ? 'Hide' : 'Show'} Wins
+            </button>
+          </div>
+
+          {showTournamentWins && (
+            <div>
+              {tournamentWinsLoading ? (
+                <p className="text-gray-400 text-sm">Loading tournament wins...</p>
+              ) : tournamentWins && tournamentWins.tournamentWins.length > 0 ? (
+                <div className="space-y-6">
+                  {/* Summary Stats */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-[#190F31] rounded-lg p-4">
+                      <div className="text-sm text-gray-400 mb-1">Total Wins</div>
+                      <div className="text-2xl font-bold text-yellow-400">
+                        {tournamentWins.summary.totalWins}
+                      </div>
+                    </div>
+                    <div className="bg-[#190F31] rounded-lg p-4">
+                      <div className="text-sm text-gray-400 mb-1">Total Prize Money</div>
+                      <div className="text-2xl font-bold text-green-400">
+                        ${tournamentWins.summary.totalPrizesMoney.toFixed(2)}
+                      </div>
+                    </div>
+                    <div className="bg-[#190F31] rounded-lg p-4">
+                      <div className="text-sm text-gray-400 mb-1">Wins by Period</div>
+                      <div className="text-sm text-white space-y-1">
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Daily:</span>
+                          <span className="font-semibold">{tournamentWins.summary.byPeriod.daily}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Weekly:</span>
+                          <span className="font-semibold">{tournamentWins.summary.byPeriod.weekly}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-400">Monthly:</span>
+                          <span className="font-semibold">{tournamentWins.summary.byPeriod.monthly}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Tournament Wins List */}
+                  <div>
+                    <h3 className="text-lg font-semibold text-white mb-3">Recent Wins</h3>
+                    <div className="space-y-3">
+                      {tournamentWins.tournamentWins.map((win) => (
+                        <div
+                          key={win.tournamentId}
+                          className="bg-[#190F31] rounded-lg p-4 border border-purple-900/20"
+                        >
+                          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                            {/* Left side - Tournament Info */}
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                  win.period === 'daily'
+                                    ? 'bg-blue-900/30 text-blue-300 border border-blue-500/50'
+                                    : win.period === 'weekly'
+                                    ? 'bg-purple-900/30 text-purple-300 border border-purple-500/50'
+                                    : 'bg-yellow-900/30 text-yellow-300 border border-yellow-500/50'
+                                }`}>
+                                  {win.period.charAt(0).toUpperCase() + win.period.slice(1)}
+                                </span>
+                                <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                  win.mode === 'singleplayer'
+                                    ? 'bg-green-900/30 text-green-300 border border-green-500/50'
+                                    : 'bg-orange-900/30 text-orange-300 border border-orange-500/50'
+                                }`}>
+                                  {win.mode === 'singleplayer' ? 'Single Player' : 'Multiplayer'}
+                                </span>
+                              </div>
+                              <div className="text-xs text-gray-400">
+                                {dayjs(win.startDate).format('MMM D, YYYY')} - {dayjs(win.endDate).format('MMM D, YYYY')}
+                              </div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                {win.qualifiedParticipants} / {win.totalParticipants} qualified participants
+                              </div>
+                            </div>
+
+                            {/* Right side - Stats */}
+                            <div className="flex items-center gap-6">
+                              <div className="text-right">
+                                <div className="text-sm text-gray-400">Winning Time</div>
+                                <div className="text-lg font-mono text-white">{win.winningTime.toFixed(3)}s</div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-sm text-gray-400">Prize</div>
+                                <div className="text-lg font-semibold text-green-400">
+                                  ${win.prizeAmount.toFixed(2)}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Pagination info */}
+                  {tournamentWins.pagination.hasMore && (
+                    <div className="text-center text-sm text-gray-400 mt-4">
+                      Showing {tournamentWins.tournamentWins.length} of {tournamentWins.pagination.total} total wins
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="text-gray-400 text-sm">No tournament wins found</p>
               )}
             </div>
           )}
