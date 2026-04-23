@@ -230,6 +230,30 @@ class PlayerApiService {
     if (!r.ok) throw new Error(data?.message || "Failed to get onboarding link");
     return data;
   }
+
+  async register(params: { firstName: string; lastName: string; email: string; password: string }) {
+    const { firstName, lastName, email, password } = params;
+    const name = `${firstName.trim()} ${lastName.trim()}`.trim();
+
+    if (USE_MOCK_API) {
+      const token = "mock-token";
+      const profileId = MOCK_PROFILE.id;
+      this.setSession(token, profileId);
+      return { token, profile: { id: profileId }, user: { username: email } };
+    }
+
+    const r = await fetch(`${this.baseUrl}/api/v2/users`, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({ username: email, password, name, email, type: "username" }),
+    });
+
+    const data = await r.json();
+    if (!r.ok) throw new Error(data?.message || "Registration failed");
+
+    this.setSession(data.token, data.user?.profileId ?? data.profile?.id);
+    return data;
+  }
 }
 
 export const playerApi = new PlayerApiService();

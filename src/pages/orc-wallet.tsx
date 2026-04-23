@@ -460,13 +460,14 @@ export default function BetBurn() {
               <div style={loginTitle}>Sign In</div>
               <form onSubmit={handleLogin} style={loginForm} noValidate>
                 <div style={loginField}>
-                  <label style={loginLabel} htmlFor="orc-username">Username</label>
+                  <label style={loginLabel} htmlFor="orc-username">Email Address</label>
                   <input
                     id="orc-username"
+                    type="email"
                     value={loginUsername}
                     onChange={(e) => setLoginUsername(e.target.value)}
                     style={loginInput}
-                    autoComplete="username"
+                    autoComplete="email"
                     autoFocus
                   />
                 </div>
@@ -486,6 +487,10 @@ export default function BetBurn() {
                   {loginLoading ? "Signing in…" : "Sign In"}
                 </button>
               </form>
+              <p style={registerPrompt}>
+                Don&apos;t have an account?{" "}
+                <a href="/register" style={registerLink}>Create one</a>
+              </p>
             </div>
           </div>
         ) : (
@@ -1210,6 +1215,20 @@ const loginSubmitBtn: React.CSSProperties = {
   fontSize: 16,
   cursor: "pointer",
   marginTop: 6,
+};
+
+const registerPrompt: React.CSSProperties = {
+  textAlign: "center",
+  fontSize: 14,
+  color: "rgba(255,255,255,0.65)",
+  marginTop: 20,
+  marginBottom: 0,
+};
+
+const registerLink: React.CSSProperties = {
+  color: "#FFBD17",
+  fontWeight: 600,
+  textDecoration: "none",
 };
 
 
