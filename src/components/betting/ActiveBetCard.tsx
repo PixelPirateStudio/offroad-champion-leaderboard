@@ -318,7 +318,7 @@ export const ActiveBetCard: React.FC<ActiveBetCardProps> = ({
                 {bet.status === "rematch" && (
                   <div className="bg-orange-900/30 rounded-lg p-3 mb-3">
                     <p className="text-sm font-semibold text-orange-400">
-                      It's a tie! Race again to determine the winner.
+                      It&apos;s a tie! Race again to determine the winner.
                     </p>
                   </div>
                 )}

@@ -472,7 +472,7 @@ export default function BetsPage() {
             </div>
             {playerSearch && !resolvedPlayerId && !isValidUUID(playerSearch) && (
               <div className="text-sm text-yellow-400 ml-1">
-                Searching for player "{playerSearch}"...
+                Searching for player &quot;{playerSearch}&quot;...
               </div>
             )}
             {playerSearch && !resolvedPlayerId && isValidUUID(playerSearch) && (
