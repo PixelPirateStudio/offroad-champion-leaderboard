@@ -33,7 +33,7 @@ export const RecentEvent = (props: { event: TournamentEvent }) => {
           </span>
         </div>
       </div>
-      <div className={`flex flex-col gap-4`}>
+      <div className={`flex flex-col gap-4 flex-1 min-w-0`}>
         <div className={`flex flex-row gap-2 items-end min-w-0`}>
           <img
             src="assets/winner.svg"

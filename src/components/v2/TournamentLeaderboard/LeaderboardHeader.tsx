@@ -19,7 +19,7 @@ export const LeaderboardHeader = ({
   prize,
 }: LeaderboardHeaderProps) => {
   return (
-    <div className="flex items-center justify-between mb-6 font-family-inter">
+    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6 font-family-inter">
       {/* Left side - Icon and Info */}
       <div className="flex items-center gap-4">
         {/* Tournament Icon */}

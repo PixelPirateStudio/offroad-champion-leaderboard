@@ -25,7 +25,7 @@ export const LeaderboardRow = ({
   };
 
   return (
-    <div className="grid grid-cols-[60px_1fr_140px_100px_120px] items-center py-0 border- border-gray-800 last:border-b-0 font-family-inter">
+    <div className="grid grid-cols-[40px_1fr_110px] sm:grid-cols-[60px_1fr_140px_100px_120px] items-center py-0 border- border-gray-800 last:border-b-0 font-family-inter">
       {/* Place */}
       <div className="text-white text-lg">{place}</div>
 
@@ -39,12 +39,12 @@ export const LeaderboardRow = ({
       <div className="text-white text-base flex justify-center truncate">{score}</div>
 
       {/* Races */}
-      <div className="text-yellow-500 text-base flex justify-center font-semibold truncate">
+      <div className="hidden sm:flex text-yellow-500 text-base justify-center font-semibold truncate">
         {races}
       </div>
 
       {/* Qualification */}
-      <div className="flex justify-center">
+      <div className="hidden sm:flex justify-center">
         {qualified ? (
           <svg
             className="w-6 h-6 text-green-500"
