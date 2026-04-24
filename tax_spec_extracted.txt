@@ -1,0 +1,301 @@
+Below is a build-ready engineering spec your team can implement with React + Stripe for 
+collecting W-9 (US persons) and W-8BEN (foreign individuals), assuming foreign winnings 
+are treated as non-US sourced (so no US withholding / no 1042-S for those users), and US 
+winners may receive 1099 reporting. 
+ 
+Tax Profile & Tax Document Collection Spec 
+(W-9 / W-8BEN) 
+1) Purpose 
+Build a Tax Collection flow for Off-Road Champion “Bet & Burn” payouts that: 
+• Collects W-9 information for US persons (to support 1099 reporting). 
+• Collects W-8BEN information for foreign individuals (to document foreign status for 
+non-US sourced winnings). 
+• Stores a tax profile per user and gates payouts until tax profile is complete. 
+• Supports “Tax Documents” downloads/links inside the user account (1099 if issued). 
+Key principle: Do not attempt to infer citizenship from address/bank. Use user self-
+certification + required fields. 
+ 
+2) Scope 
+In Scope 
+• React UI flow to capture tax classification and fields 
+• Form validation + e-sign style attestation + date/time stamps 
+• Secure storage of tax profile metadata (no plaintext TIN) 
+• Admin/reporting readiness (export to vendor or internal reporting) 
+• User portal “Tax Documents” page (links to 1099 PDFs if generated) 
+Out of Scope (for this sprint) 
+• Automatic treaty benefit calculation 
+• 1042-S generation (not needed given your “non-US sourced income” position) 
+• Tax advice or form selection beyond W-9/W-8BEN 
+• Support for foreign entities (W-8BEN-E) unless you decide to add later 
+ 
+
+3) User Types & Rules 
+3.1 US Person (W-9) 
+A user who self-certifies they are a US person for tax purposes must complete W-9 fields: 
+• Legal name (as on tax return) 
+• Business name/DBA (optional) 
+• Federal tax classification (Individual/sole prop, C-Corp, S-Corp, Partnership, LLC type, 
+Other) 
+• Address (US) 
+• TIN (SSN or EIN) 
+• Certification/attestation + signature + date 
+Result: Eligible for 1099 reporting if thresholds met. 
+3.2 Foreign Individual (W-8BEN) 
+A user who self-certifies they are a non-US individual completes W-8BEN fields: 
+• Legal name 
+• Country of citizenship 
+• Permanent residence address (non-US, typically) 
+• Mailing address (optional) 
+• Foreign tax identifying number (optional; some platforms require) 
+• US ITIN/SSN (optional; only if they have one) 
+• Date of birth 
+• Certification/attestation + signature + date 
+Assumption: This flow is for non-US sourced income → no US withholding and no US tax 
+form issued (but we retain W-8BEN as substantiation). 
+ 
+4) UX Entry Points 
+Entry Point A: Before first payout (required) 
+If user attempts to withdraw winnings and has no valid tax profile: 
+• Show modal / route to /account/tax 
+• Block payout until completed 
+Entry Point B: Account Settings 
+
+Navigation: Account → Tax Info 
+User can view status, update, and re-submit. 
+Entry Point C: Annual reminders 
+Banner shown in Q4 / early Q1: 
+• “Confirm your tax information for payouts.” 
+ 
+5) React UI: Screens & Components 
+5.1 Tax Landing Page (/account/tax) 
+Status card: 
+• Tax status: Not started | Pending review | Completed | Needs update 
+• Form type on file: W-9 | W-8BEN 
+• Submitted date 
+• Last 4 of TIN (W-9 only; optional) 
+• Buttons: Start, Update, Download tax documents 
+5.2 Step 1: Tax Classification 
+Prompt: “For tax purposes, are you a US person?” 
+Options: 
+•     Yes (W-9) 
+•    No (W-8BEN) 
+Add notice: “This is tax residency, not citizenship.” 
+5.3 Step 2A: W-9 Form (US person) 
+Fields: 
+• legal_name (required) 
+• business_name (optional) 
+• tax_classification (required enum) 
+• address_line1 (required) 
+• address_line2 (optional) 
+• city (required) 
+• state (required) 
+• zip (required) 
+
+• tin_type (SSN | EIN) (required) 
+• tin (required) — masked input 
+• Attestation checkbox + signature typed name + date auto-filled 
+Validation: 
+• Basic TIN format checks (length/characters) 
+• Zip/state formatting 
+• Name required 
+5.4 Step 2B: W-8BEN Form (foreign) 
+Fields: 
+• legal_name (required) 
+• country_of_citizenship (required) 
+• permanent_address_line1 (required) 
+• permanent_address_line2 (optional) 
+• city (required) 
+• region/province (optional) 
+• postal_code (required if applicable) 
+• country (required, non-US) 
+• mailing_address_same_as_permanent (checkbox) 
+• mailing_address_* (conditional) 
+• foreign_tax_id (optional, but recommended) 
+• us_tin (optional) 
+• date_of_birth (required) 
+• Attestation checkbox + signature typed name + date auto-filled 
+Validation: 
+• Country != United States 
+• Required address fields 
+• DOB must be valid date; minimum age logic optional 
+5.5 Step 3: Review & Submit 
+• Render summary of entered fields (mask TIN) 
+• “Submit” triggers backend creation + stores audit trail 
+5.6 Confirmation 
+• Success message 
+• “Return to Withdrawal” deep link 
+• Next steps: 
+
+o W-9: “If your winnings exceed reporting thresholds, you’ll receive a tax form.” 
+o W-8BEN: “We keep this on file to document foreign status.” 
+ 
+6) Stripe Platform Integration 
+6.1 What Stripe is used for (in this spec) 
+• Payments & payouts (adding funds, withdrawing) 
+• Optional: Identity verification (KYC) if you choose later 
+6.2 What Stripe is NOT used for here 
+• Determining “citizenship” or “US person” status from bank data. 
+• Tax form generation (unless you adopt Stripe Connect Tax Reporting and your model fits 
+it later). 
+6.3 Address consistency 
+Use the address in tax form as the tax address. Stripe billing address can be different; do not 
+overwrite tax address automatically. 
+ 
+7) Backend APIs (Required) 
+Even though you said “backend is built in React,” React is frontend. These endpoints must live 
+in a server environment (Node/Express, Next.js API routes, serverless). 
+7.1 Auth 
+All endpoints require authenticated user (JWT/session). 
+7.2 Endpoints 
+GET /api/tax/profile 
+• Returns current tax profile metadata: 
+o status, form_type, submitted_at, needs_update, last4_tin (if stored), 
+tax_year_documents[] 
+POST /api/tax/profile 
+• Creates or replaces tax profile submission 
+
+• Body includes either W-9 or W-8BEN payload + attestation fields 
+• Response: status=completed, profile_id 
+POST /api/tax/profile/verify (optional) 
+• Internal checks (e.g., queue for manual review) 
+• Return pending_review if needed 
+GET /api/tax/documents 
+• Returns list of issued forms (e.g., 1099 for a tax year): 
+o tax_year, type, download_url (short-lived), issued_at 
+GET /api/tax/documents/:docId/download 
+• Generates a short-lived signed URL or streams file from vendor storage 
+ 
+8) Data Model (Suggested) 
+8.1 tax_profiles 
+• id (uuid) 
+• user_id (uuid) 
+• form_type enum: W9 | W8BEN 
+• status enum: not_started | pending_review | completed | needs_update 
+• legal_name 
+• address_json (structured) 
+• country (ISO) 
+• submitted_at 
+• signature_name 
+• signature_timestamp 
+• ip_at_signature (store for audit) 
+• user_agent (optional) 
+• tin_last4 (W-9 only, optional) 
+• tin_encrypted (W-9 only) or tin_token (preferred; see Security) 
+• dob (W-8BEN only; encrypted) 
+• foreign_tax_id (encrypted; optional) 
+• version (integer) 
+8.2 tax_documents 
+• id 
+• user_id 
+
+• tax_year 
+• doc_type enum: 1099_MISC | ... 
+• vendor (e.g., Tax1099/Track1099/manual) 
+• vendor_ref_id 
+• issued_at 
+• storage_location (if stored) 
+• download_policy (signed url TTL rules) 
+ 
+9) Security & Compliance Requirements 
+9.1 Never store full SSN/EIN in plaintext 
+Choose one: 
+Option A (preferred): Tokenize with vendor 
+• Send TIN to your tax vendor immediately. 
+• Store only vendor_recipient_id + tin_last4. 
+Option B: Encrypt at rest 
+• Store TIN encrypted with KMS-managed keys. 
+• Strict access controls; audit logs. 
+9.2 Masking & redaction 
+• UI: show only last 4 of TIN. 
+• Logs: never log TIN, DOB, foreign tax ID. 
+• Error reporting: scrub sensitive fields. 
+9.3 Re-consent / updates 
+Tax profiles can expire or require updates if: 
+• Name/address changes 
+• User changes tax classification 
+• TIN mismatch alerts (if you add TIN matching later) 
+9.4 Audit trail 
+Store: 
+• Signature name 
+
+• Timestamp 
+• IP address 
+• Version of attestation text 
+ 
+10) Payout Gating Logic 
+Rule 
+User cannot withdraw winnings until: 
+• tax_profile.status == completed 
+• form_type exists 
+For foreigners (W-8BEN) 
+Additionally require: 
+• country != US 
+• permanent_address present 
+• dob present 
+For US (W-9) 
+Additionally require: 
+• tin present (token or encrypted) 
+• US address present 
+ 
+11) Tax Document Delivery UX 
+/account/tax-documents 
+Show: 
+• Tax year list 
+• Document type 
+• Button: Download 
+Implementation: 
+• If using vendor-hosted portals, store a link token and redirect. 
+
+• If storing PDFs, generate short-lived signed links. 
+Do not email PDFs by default. 
+ 
+12) Edge Cases 
+1. User selects W-8BEN but has US address 
+• Block with explanation: foreign tax form requires non-US permanent address (or allow 
+but flag pending_review). 
+2. User selects W-9 but is outside US 
+• Allow; US persons can live abroad. Address can be international in some W-9 cases; but 
+your payout policy may require US address. Decide and enforce. 
+3. Name mismatch between Stripe payout account and tax profile 
+• Flag for review (anti-fraud). 
+4. User changes classification 
+• Force resubmission; archive prior version. 
+ 
+13) Testing Checklist 
+Frontend 
+• Required field validation 
+• Masked inputs + no console logging 
+• Step navigation and resume state 
+• Accessibility for forms 
+Backend 
+• Auth required for all routes 
+• Sensitive fields never logged 
+• Encryption/tokenization path verified 
+• Signed URL download expires 
+• Data export to vendor format correct 
+
+Security 
+• Pen test for IDOR (user can’t access another user’s tax doc) 
+• Verify no sensitive data in analytics events 
+ 
+14) Attestation Text (Minimum) 
+Include at submission: 
+• W-9: “Under penalties of perjury, I certify that the information provided is true and that I 
+am a US person for tax purposes.” 
+• W-8BEN: “Under penalties of perjury, I certify that I am the beneficial owner and a non-
+US person, and the information provided is true.” 
+Store the exact text version submitted. 
+ 
+15) Implementation Notes (Recommended Vendor Hook) 
+Even if you don’t integrate a vendor today, design the API so you can later: 
+• Create recipients in Tax1099/Track1099 
+• Push annual totals 
+• Pull generated PDFs / links 
+Store vendor_recipient_id in tax_profiles early to avoid refactors. 
+ 
+If you want, paste what stack you’re using for “backend” (Next.js API routes, Firebase functions, 
+Express, etc.) and I’ll convert this into: 
+• exact route handlers + request/response JSON schemas 
+• a React component tree (TaxWizard, W9Form, W8BENForm, TaxDocuments) 
+• and a DB schema migration (Postgres/Supabase style). 
+ 
