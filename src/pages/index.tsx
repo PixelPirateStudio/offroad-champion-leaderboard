@@ -116,7 +116,7 @@ export default function Home({
           {/* Single-Player Column */}
           <div className="flex flex-col gap-4 md:gap-5 lg:gap-6">
             <TournamentLeaderboard
-              title="Single-Player: Daily Tournament:"
+              title="Single-Player: Daily Tournament"
               date={dayjs(tournamentDates.dailySP.startDate).format("M/D/YYYY")}
               type="Time Trials"
               description="Best times today"
@@ -142,7 +142,7 @@ export default function Home({
             />
 
             <TournamentLeaderboard
-              title="Single-Player:  Monthly Tournament:"
+              title="Single-Player: Monthly Tournament"
               date={dayjs(tournamentDates.monthlySP.startDate).format("M/D/YYYY")}
               type="Time Trials"
               description="Best months times"
@@ -158,7 +158,7 @@ export default function Home({
           {/* Multi-Player Column */}
           <div className="flex flex-col gap-4 md:gap-5 lg:gap-6">
             <TournamentLeaderboard
-              title="Multi-Player: Daily Tournament:"
+              title="Multi-Player: Daily Tournament"
               date={dayjs(tournamentDates.dailyMP.startDate).format("M/D/YYYY")}
               type="Time Trials"
               description="Best times today"
@@ -171,7 +171,7 @@ export default function Home({
             />
 
             <TournamentLeaderboard
-              title="Multi-Player: Weekly Tournament:"
+              title="Multi-Player: Weekly Tournament"
               date={dayjs(tournamentDates.weeklyMP.startDate).format("M/D/YYYY")}
               type="Time Trials"
               description="Best weeks times"
