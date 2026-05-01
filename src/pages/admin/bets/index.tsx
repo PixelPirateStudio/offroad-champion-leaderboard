@@ -1,27 +1,47 @@
 import React, { useState, useEffect } from 'react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
-import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
+import { ChevronLeftIcon, ChevronRightIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import dayjs from 'dayjs';
+import relativeTime from 'dayjs/plugin/relativeTime';
+import { adminApi } from '@/services/adminApi';
+import { useRequireAdmin } from '@/contexts/AdminAuthContext';
 
-// Bet interface definition
+dayjs.extend(relativeTime);
+
+// Bet interface definition (matching API response)
 interface Player {
   id: string;
   username: string;
-  countryCode: string; // e.g., 'JP' for Japan, 'NO' for Norway
+  name?: string;
+  country?: string;
 }
 
 interface Bet {
   id: string;
-  player1: Player;
-  player1Wager: number;
-  player1Car: string;
-  player2: Player;
-  player2Wager: number;
-  player2Car: string;
-  level: string;
-  winner: Player | null;
-  createdAt: string; // ISO date string
-  isCompleted: boolean;
+  creatorId: string;
+  acceptorId: string | null;
+  betAmount: string;
+  houseFee: string;
+  type: 'live' | 'open';
+  status: 'open' | 'active' | 'completed' | 'cancelled' | 'refunded' | 'rematch';
+  winnerId: string | null;
+  creatorRaceValidationId: string | null;
+  acceptorRaceValidationId: string | null;
+  metadata?: unknown;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt: string;
+  creator: Player;
+  acceptor?: Player;
+  winner?: Player;
+}
+
+interface BetsResponse {
+  bets: Bet[];
+  total: number;
+  limit: number;
+  offset: number;
+  period: string | null;
 }
 
 interface TaxFormData {
@@ -36,45 +56,9 @@ interface TaxFormData {
   zip: string;
   country: string;
   totalIncome: number;
-  taxFormType: string; // e.g., '1099', 'W-8BEN'
+  taxFormType: string;
   createdAt: string;
 }
-
-// Mock data generator
-const generateMockBets = (): Bet[] => {
-  const mockBets: Bet[] = [];
-
-  const player1 = {
-    id: '1',
-    username: 'Lizardman_021',
-    countryCode: 'JP',
-  };
-
-  const player2 = {
-    id: '2',
-    username: 'Mega39_021',
-    countryCode: 'NO',
-  };
-
-  // Create 7 identical bets as shown in the Figma
-  for (let i = 0; i < 7; i++) {
-    mockBets.push({
-      id: `bet-${i}`,
-      player1,
-      player1Wager: 300,
-      player1Car: 'Car #5',
-      player2,
-      player2Wager: 300,
-      player2Car: 'Car #3',
-      level: '#2',
-      winner: player1,
-      createdAt: '2026-01-13T09:30:00Z',
-      isCompleted: true,
-    });
-  }
-
-  return mockBets;
-};
 
 // Mock tax form data generator
 const generateMockTaxForms = (): TaxFormData[] => {
@@ -114,43 +98,275 @@ const generateMockTaxForms = (): TaxFormData[] => {
 
 type TabType = 'live' | 'open' | 'tax';
 
+const REFRESH_INTERVAL = 10000; // 10 seconds for live data refresh
+
 export default function BetsPage() {
+  const { isLoading: authLoading, isAuthenticated } = useRequireAdmin();
+
   const [activeTab, setActiveTab] = useState<TabType>('open');
   const [page, setPage] = useState(0);
   const [taxYear, setTaxYear] = useState(2026);
   const [betsPeriod, setBetsPeriod] = useState<'weekly' | 'monthly' | 'yearly'>('weekly');
   const [revenuePeriod, setRevenuePeriod] = useState<'weekly' | 'monthly' | 'yearly'>('weekly');
   const [taxStatus, setTaxStatus] = useState<'pending' | 'filed' | 'completed'>('pending');
+
+  // Player filter state
+  const [playerSearch, setPlayerSearch] = useState('');
+  const [resolvedPlayerId, setResolvedPlayerId] = useState<string | null>(null);
+
+  // Data state
+  const [openBets, setOpenBets] = useState<Bet[]>([]);
+  const [liveBets, setLiveBets] = useState<Bet[]>([]);
+  const [openTotal, setOpenTotal] = useState(0);
+  const [liveTotal, setLiveTotal] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+
+  // Metrics state
+  const [totalBetsCount, setTotalBetsCount] = useState(0);
+  const [totalRevenue, setTotalRevenue] = useState(0);
+  const [isLoadingMetrics, setIsLoadingMetrics] = useState(false);
+
   const limit = 10;
 
-  // Reset page when changing tabs
+  // Helper function to check if string is a valid UUID
+  const isValidUUID = (str: string) => {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(str);
+  };
+
+  // Search for player by username and get their ID
+  const searchPlayerByUsername = async (searchTerm: string) => {
+    try {
+      const response = await adminApi.getPlayers({
+        search: searchTerm,
+        limit: 1,
+      }) as { players: Array<{ id: string; username: string }>; total: number };
+
+      if (response.players && response.players.length > 0) {
+        return response.players[0].id;
+      }
+      return null;
+    } catch (err) {
+      console.error('Failed to search for player:', err);
+      return null;
+    }
+  };
+
+  // Resolve player search to ID
+  useEffect(() => {
+    const resolvePlayerId = async () => {
+      if (!playerSearch.trim()) {
+        setResolvedPlayerId(null);
+        return;
+      }
+
+      // If it's already a valid UUID, use it directly
+      if (isValidUUID(playerSearch.trim())) {
+        setResolvedPlayerId(playerSearch.trim());
+        return;
+      }
+
+      // Otherwise, search for player by username
+      const playerId = await searchPlayerByUsername(playerSearch.trim());
+      setResolvedPlayerId(playerId);
+    };
+
+    // Debounce the search
+    const timeoutId = setTimeout(() => {
+      resolvePlayerId();
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [playerSearch]);
+
+  // Fetch open bets (status: 'open')
+  const fetchOpenBets = async () => {
+    try {
+      setError(null);
+      const params: {
+        status: 'open';
+        limit: number;
+        offset: number;
+        creatorId?: string;
+      } = {
+        status: 'open',
+        limit,
+        offset: page * limit,
+      };
+
+      // Add player filter if we have a resolved player ID
+      if (resolvedPlayerId) {
+        params.creatorId = resolvedPlayerId;
+      }
+
+      const response = await adminApi.getAllBets(params) as BetsResponse;
+
+      setOpenBets(response.bets || []);
+      setOpenTotal(response.total || 0);
+      setLastRefresh(new Date());
+    } catch (err) {
+      setError((err as Error).message || 'Failed to load open bets');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Fetch live bets (status: 'active')
+  const fetchLiveBets = async () => {
+    try {
+      setError(null);
+      const params: {
+        status: 'active';
+        limit: number;
+        offset: number;
+        creatorId?: string;
+      } = {
+        status: 'active',
+        limit,
+        offset: page * limit,
+      };
+
+      // Add player filter if we have a resolved player ID
+      if (resolvedPlayerId) {
+        params.creatorId = resolvedPlayerId;
+      }
+
+      const response = await adminApi.getAllBets(params) as BetsResponse;
+
+      setLiveBets(response.bets || []);
+      setLiveTotal(response.total || 0);
+      setLastRefresh(new Date());
+    } catch (err) {
+      setError((err as Error).message || 'Failed to load live bets');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Fetch metrics for the selected period
+  const fetchMetrics = async (period: 'weekly' | 'monthly' | 'yearly') => {
+    try {
+      setIsLoadingMetrics(true);
+      const periodMap = {
+        weekly: '7d',
+        monthly: '30d',
+        yearly: '365d',
+      } as const;
+
+      // Fetch ALL bets (any status) for total count
+      const allBetsResponse = await adminApi.getAllBets({
+        period: periodMap[period],
+      }) as BetsResponse;
+
+      // Fetch only completed bets for revenue calculation
+      const completedBetsResponse = await adminApi.getAllBets({
+        status: 'completed',
+        period: periodMap[period],
+      }) as BetsResponse;
+
+      const allBets = allBetsResponse.bets || [];
+      const completedBets = completedBetsResponse.bets || [];
+
+      // Total bets count (all statuses)
+      const count = allBets.length;
+
+      // Revenue is sum of house fees from completed bets only
+      const revenue = completedBets.reduce((sum, bet) => {
+        return sum + parseFloat(bet.houseFee || '0');
+      }, 0);
+
+      setTotalBetsCount(count);
+      setTotalRevenue(revenue);
+    } catch (err) {
+      console.error('Failed to fetch metrics:', err);
+      // Don't show error to user for metrics, just log it
+    } finally {
+      setIsLoadingMetrics(false);
+    }
+  };
+
+  // Fetch data based on active tab
+  const fetchData = () => {
+    if (activeTab === 'open') {
+      fetchOpenBets();
+    } else if (activeTab === 'live') {
+      fetchLiveBets();
+    }
+  };
+
+  // Reset page when changing tabs or resolved player ID
   useEffect(() => {
     setPage(0);
-  }, [activeTab]);
+  }, [activeTab, resolvedPlayerId]);
 
-  const bets = generateMockBets();
-  const paginatedBets = bets.slice(page * limit, (page + 1) * limit);
-  const totalPages = Math.ceil(bets.length / limit);
+  // Fetch metrics when period changes
+  useEffect(() => {
+    if (isAuthenticated && activeTab !== 'tax') {
+      fetchMetrics(betsPeriod);
+    }
+  }, [isAuthenticated, betsPeriod, activeTab]);
+
+  // Fetch data when authenticated, tab changes, page changes, or resolved player ID changes
+  useEffect(() => {
+    if (isAuthenticated && activeTab !== 'tax') {
+      setIsLoading(true);
+      fetchData();
+    }
+  }, [isAuthenticated, activeTab, page, resolvedPlayerId]);
+
+  // Auto-refresh for open and live bets
+  useEffect(() => {
+    if (isAuthenticated && activeTab !== 'tax') {
+      const interval = setInterval(() => {
+        fetchData();
+        fetchMetrics(betsPeriod);
+      }, REFRESH_INTERVAL);
+
+      return () => clearInterval(interval);
+    }
+  }, [isAuthenticated, activeTab, page, betsPeriod, resolvedPlayerId]);
+
+  // Manual refresh handler
+  const handleManualRefresh = () => {
+    setIsLoading(true);
+    fetchData();
+    fetchMetrics(betsPeriod);
+  };
 
   const taxForms = generateMockTaxForms();
   const paginatedTaxForms = taxForms.slice(page * limit, (page + 1) * limit);
   const taxTotalPages = Math.ceil(taxForms.length / limit);
 
+  // Calculate pagination based on active tab
+  const getCurrentBets = () => {
+    if (activeTab === 'open') return openBets;
+    if (activeTab === 'live') return liveBets;
+    return [];
+  };
+
+  const getCurrentTotal = () => {
+    if (activeTab === 'open') return openTotal;
+    if (activeTab === 'live') return liveTotal;
+    return 0;
+  };
+
+  const currentBets = getCurrentBets();
+  const totalPages = Math.ceil(getCurrentTotal() / limit);
+
   // Calculate metrics based on selected period
   const houseCutPercentage = 0.25;
 
-  // Mock data for different periods
-  const betsMetrics = {
-    weekly: { totalBets: 4200, revenue: 1050 },
-    monthly: { totalBets: 18500, revenue: 4625 },
-    yearly: { totalBets: 225000, revenue: 56250 },
+  const calculatePot = (bet: Bet) => {
+    const betAmount = parseFloat(bet.betAmount);
+    return betAmount * 2;
   };
 
-  const totalBets = betsMetrics[betsPeriod].totalBets;
-  const revenue = betsMetrics[revenuePeriod].revenue;
+  const calculateHousePot = (bet: Bet) => {
+    return parseFloat(bet.houseFee);
+  };
 
-  const calculatePot = (bet: Bet) => bet.player1Wager + bet.player2Wager;
-  const calculateHousePot = (bet: Bet) => Math.round(calculatePot(bet) * houseCutPercentage);
   const calculateTransfer = (bet: Bet) => {
     const pot = calculatePot(bet);
     const housePot = calculateHousePot(bet);
@@ -158,7 +374,10 @@ export default function BetsPage() {
   };
 
   // Country flag emoji mapping
-  const getFlagEmoji = (countryCode: string) => {
+  const getFlagEmoji = (country?: string) => {
+    if (!country) return '🏁';
+
+    const countryCode = country.toUpperCase().substring(0, 2);
     const flags: Record<string, string> = {
       JP: '🇯🇵',
       NO: '🇳🇴',
@@ -166,9 +385,23 @@ export default function BetsPage() {
       GB: '🇬🇧',
       DE: '🇩🇪',
       FR: '🇫🇷',
+      CA: '🇨🇦',
+      AU: '🇦🇺',
+      BR: '🇧🇷',
+      MX: '🇲🇽',
     };
     return flags[countryCode] || '🏁';
   };
+
+  if (authLoading || isLoading) {
+    return (
+      <AdminLayout>
+        <div className="flex items-center justify-center h-64">
+          <div className="text-white text-lg">Loading...</div>
+        </div>
+      </AdminLayout>
+    );
+  }
 
   return (
     <AdminLayout>
@@ -215,9 +448,49 @@ export default function BetsPage() {
           </button>
         </div>
 
+        {/* Search Bar - For Open and Live Bets */}
+        {activeTab !== 'tax' && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-4">
+              <div className="flex-1 max-w-md">
+                <input
+                  type="text"
+                  placeholder="Filter by Player ID or Username..."
+                  value={playerSearch}
+                  onChange={(e) => setPlayerSearch(e.target.value)}
+                  className="w-full px-4 py-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-yellow-500 placeholder-gray-400"
+                />
+              </div>
+              {playerSearch && (
+                <button
+                  onClick={() => setPlayerSearch('')}
+                  className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded border border-gray-600 transition-all"
+                >
+                  Clear Filter
+                </button>
+              )}
+            </div>
+            {playerSearch && !resolvedPlayerId && !isValidUUID(playerSearch) && (
+              <div className="text-sm text-yellow-400 ml-1">
+                Searching for player &quot;{playerSearch}&quot;...
+              </div>
+            )}
+            {playerSearch && !resolvedPlayerId && isValidUUID(playerSearch) && (
+              <div className="text-sm text-blue-400 ml-1">
+                Filtering by Player ID
+              </div>
+            )}
+            {playerSearch && resolvedPlayerId && !isValidUUID(playerSearch) && (
+              <div className="text-sm text-green-400 ml-1">
+                Showing bets for player (ID: {resolvedPlayerId.substring(0, 8)}...)
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Metrics - Conditional rendering based on active tab */}
         {activeTab !== 'tax' ? (
-          <div className="flex gap-8">
+          <div className="flex gap-8 items-center">
             <div className="flex items-center gap-3">
               <select
                 value={betsPeriod}
@@ -230,14 +503,20 @@ export default function BetsPage() {
               </select>
               <div className="bg-black border border-gray-600 px-6 py-2 rounded">
                 <span className="text-white mr-2">Total Bets:</span>
-                <span className="text-green-400 font-semibold">${totalBets.toLocaleString()}</span>
+                <span className="text-green-400 font-semibold">
+                  {isLoadingMetrics ? '...' : totalBetsCount.toLocaleString()}
+                </span>
               </div>
             </div>
 
             <div className="flex items-center gap-3">
               <select
                 value={revenuePeriod}
-                onChange={(e) => setRevenuePeriod(e.target.value as 'weekly' | 'monthly' | 'yearly')}
+                onChange={(e) => {
+                  const newPeriod = e.target.value as 'weekly' | 'monthly' | 'yearly';
+                  setRevenuePeriod(newPeriod);
+                  fetchMetrics(newPeriod);
+                }}
                 className="bg-gray-700 text-white px-4 py-2 rounded border border-gray-600 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-yellow-500"
               >
                 <option value="weekly">Weekly</option>
@@ -246,8 +525,25 @@ export default function BetsPage() {
               </select>
               <div className="bg-black border border-gray-600 px-6 py-2 rounded">
                 <span className="text-white mr-2">Revenue:</span>
-                <span className="text-green-400 font-semibold">${revenue.toLocaleString()}</span>
+                <span className="text-green-400 font-semibold">
+                  {isLoadingMetrics ? '...' : `$${totalRevenue.toFixed(2)}`}
+                </span>
               </div>
+            </div>
+
+            {/* Manual Refresh Button */}
+            <button
+              onClick={handleManualRefresh}
+              className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded border border-gray-600 transition-all"
+              title="Refresh data"
+            >
+              <ArrowPathIcon className="w-5 h-5" />
+              <span className="text-sm">Refresh</span>
+            </button>
+
+            {/* Last refresh indicator */}
+            <div className="text-sm text-gray-400">
+              Last updated: {dayjs(lastRefresh).format('h:mm:ss A')}
             </div>
           </div>
         ) : (
@@ -288,138 +584,161 @@ export default function BetsPage() {
           </div>
         )}
 
-        {/* Open Bets Content */}
-        {activeTab === 'open' && (
-          <div className="bg-[#0E0A1B] border border-purple-900/30 rounded-lg overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="min-w-full">
-                <thead className="bg-black border-b border-gray-700">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                      Date/Time
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                      Player 1
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                      Player 1 Wager
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                      Player 1 Car
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                      Player 2
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                      Player 2 Wager
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                      Player 2 Car
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                      Level
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                      Winner
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                      Pot
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                      Total Transfer
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                      House Pot
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-800">
-                  {paginatedBets.map((bet) => (
-                    <tr key={bet.id} className="hover:bg-purple-900/10">
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-300">
-                        {dayjs(bet.createdAt).format('MM/DD/YYYY')}
-                        <br />
-                        <span className="text-xs text-gray-500">
-                          ({dayjs(bet.createdAt).format('h:mma')} EST)
-                        </span>
-                      </td>
-                      <td className="px-4 py-4 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          <span className="text-2xl">{getFlagEmoji(bet.player1.countryCode)}</span>
-                          <span className="text-sm text-white">{bet.player1.username}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-yellow-400 font-semibold">
-                        ${bet.player1Wager}
-                      </td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-300">
-                        {bet.player1Car}
-                      </td>
-                      <td className="px-4 py-4 whitespace-nowrap">
-                        <div className="flex items-center gap-2">
-                          <span className="text-2xl">{getFlagEmoji(bet.player2.countryCode)}</span>
-                          <span className="text-sm text-white">{bet.player2.username}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-yellow-400 font-semibold">
-                        ${bet.player2Wager}
-                      </td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-300">
-                        {bet.player2Car}
-                      </td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-300">
-                        {bet.level}
-                      </td>
-                      <td className="px-4 py-4 whitespace-nowrap">
-                        {bet.winner ? (
-                          <div className="flex items-center gap-2">
-                            <span className="text-2xl">{getFlagEmoji(bet.winner.countryCode)}</span>
-                            <span className="text-sm text-white">{bet.winner.username}</span>
-                          </div>
-                        ) : (
-                          <span className="text-sm text-gray-500">Pending</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-green-400 font-semibold">
-                        ${calculatePot(bet)}
-                      </td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-300">
-                        ${calculateTransfer(bet)}{' '}
-                        <span className="text-xs text-gray-500">(-{houseCutPercentage * 100}% fee)</span>
-                      </td>
-                      <td className="px-4 py-4 whitespace-nowrap text-sm text-green-400 font-semibold">
-                        ${calculateHousePot(bet)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Pagination */}
-            <div className="bg-black py-6 flex items-center justify-center gap-8 border-t border-gray-700">
-              <button
-                onClick={() => setPage(Math.max(0, page - 1))}
-                disabled={page === 0}
-                className="w-12 h-12 bg-gray-700 hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center rounded"
-              >
-                <ChevronLeftIcon className="w-6 h-6 text-white" />
-              </button>
-              <button
-                onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
-                disabled={page >= totalPages - 1}
-                className="w-12 h-12 bg-gray-700 hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center rounded"
-              >
-                <ChevronRightIcon className="w-6 h-6 text-white" />
-              </button>
-            </div>
+        {/* Error Display */}
+        {error && (
+          <div className="bg-red-900/20 border border-red-500 rounded-lg p-4">
+            <p className="text-red-400">{error}</p>
           </div>
         )}
 
-        {/* Live Bets placeholder */}
-        {activeTab === 'live' && (
-          <div className="bg-[#0E0A1B] border border-purple-900/30 rounded-lg p-12 text-center">
-            <p className="text-gray-400 text-lg">Live Bets view coming soon...</p>
+        {/* Open Bets & Live Bets Content */}
+        {(activeTab === 'open' || activeTab === 'live') && (
+          <div className="bg-[#0E0A1B] border border-purple-900/30 rounded-lg overflow-hidden">
+            {currentBets.length === 0 && !isLoading ? (
+              <div className="p-12 text-center">
+                <p className="text-gray-400 text-lg">
+                  No {activeTab} bets found
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full">
+                    <thead className="bg-black border-b border-gray-700">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                          Date/Time
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                          Creator
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                          Creator Wager
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                          Acceptor
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                          Acceptor Wager
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                          Status
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                          Winner
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                          Pot
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                          Total Transfer
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                          House Pot
+                        </th>
+                        {activeTab === 'open' && (
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                            Expires
+                          </th>
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-800">
+                      {currentBets.map((bet) => (
+                        <tr key={bet.id} className="hover:bg-purple-900/10">
+                          <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-300">
+                            {dayjs(bet.createdAt).format('MM/DD/YYYY')}
+                            <br />
+                            <span className="text-xs text-gray-500">
+                              ({dayjs(bet.createdAt).format('h:mma')} EST)
+                            </span>
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap">
+                            <div className="flex items-center gap-2">
+                              <span className="text-2xl">{getFlagEmoji(bet.creator.country)}</span>
+                              <span className="text-sm text-white">{bet.creator.username}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap text-sm text-yellow-400 font-semibold">
+                            ${parseFloat(bet.betAmount).toFixed(2)}
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap">
+                            {bet.acceptor ? (
+                              <div className="flex items-center gap-2">
+                                <span className="text-2xl">{getFlagEmoji(bet.acceptor.country)}</span>
+                                <span className="text-sm text-white">{bet.acceptor.username}</span>
+                              </div>
+                            ) : (
+                              <span className="text-sm text-gray-500">Waiting...</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap text-sm text-yellow-400 font-semibold">
+                            {bet.acceptor ? `$${parseFloat(bet.betAmount).toFixed(2)}` : '-'}
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap">
+                            <span className={`px-2 py-1 rounded text-xs font-semibold ${
+                              bet.status === 'open' ? 'bg-blue-900/30 text-blue-400' :
+                              bet.status === 'active' ? 'bg-green-900/30 text-green-400' :
+                              bet.status === 'completed' ? 'bg-purple-900/30 text-purple-400' :
+                              bet.status === 'rematch' ? 'bg-orange-900/30 text-orange-400' :
+                              'bg-gray-700 text-gray-400'
+                            }`}>
+                              {bet.status.toUpperCase()}
+                            </span>
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap">
+                            {bet.winner ? (
+                              <div className="flex items-center gap-2">
+                                <span className="text-2xl">{getFlagEmoji(bet.winner.country)}</span>
+                                <span className="text-sm text-white">{bet.winner.username}</span>
+                              </div>
+                            ) : (
+                              <span className="text-sm text-gray-500">Pending</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap text-sm text-green-400 font-semibold">
+                            ${calculatePot(bet).toFixed(2)}
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-300">
+                            ${calculateTransfer(bet).toFixed(2)}{' '}
+                            <span className="text-xs text-gray-500">(-{houseCutPercentage * 100}% fee)</span>
+                          </td>
+                          <td className="px-4 py-4 whitespace-nowrap text-sm text-green-400 font-semibold">
+                            ${calculateHousePot(bet).toFixed(2)}
+                          </td>
+                          {activeTab === 'open' && (
+                            <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-400">
+                              {dayjs(bet.expiresAt).fromNow()}
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pagination */}
+                <div className="bg-black py-6 flex items-center justify-center gap-8 border-t border-gray-700">
+                  <button
+                    onClick={() => setPage(Math.max(0, page - 1))}
+                    disabled={page === 0}
+                    className="w-12 h-12 bg-gray-700 hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center rounded"
+                  >
+                    <ChevronLeftIcon className="w-6 h-6 text-white" />
+                  </button>
+                  <span className="text-white">
+                    Page {page + 1} of {totalPages || 1}
+                  </span>
+                  <button
+                    onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
+                    disabled={page >= totalPages - 1}
+                    className="w-12 h-12 bg-gray-700 hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center rounded"
+                  >
+                    <ChevronRightIcon className="w-6 h-6 text-white" />
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         )}
 

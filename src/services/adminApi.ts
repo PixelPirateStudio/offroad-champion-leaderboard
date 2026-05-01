@@ -266,6 +266,69 @@ class AdminApiService {
       `/api/v2/admin/players/${userId}/races?${queryParams.toString()}`
     );
   }
+
+  // Bet Management
+  async getAllBets(
+    params: {
+      status?: 'open' | 'active' | 'completed' | 'cancelled' | 'refunded' | 'rematch';
+      creatorId?: string;
+      acceptorId?: string;
+      startDate?: string;
+      endDate?: string;
+      limit?: number;
+      offset?: number;
+      period?: '7d' | '30d' | '365d';
+    } = {}
+  ) {
+    const queryParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined) {
+        queryParams.append(key, String(value));
+      }
+    });
+
+    return this.fetchWithAuth(
+      `/api/v2/bets/admin/all?${queryParams.toString()}`
+    );
+  }
+
+  async completeBet(betId: string, winnerId: string, raceValidationId?: string) {
+    return this.fetchWithAuth(`/api/v2/bets/admin/${betId}/complete`, {
+      method: "POST",
+      body: JSON.stringify({ winnerId, raceValidationId }),
+    });
+  }
+
+  async refundBet(betId: string, reason: string) {
+    return this.fetchWithAuth(`/api/v2/bets/admin/${betId}/refund`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  // Tournament Wins
+  async getTournamentWins(
+    params: {
+      userId?: string;
+      username?: string;
+      profileId?: string;
+      period?: 'daily' | 'weekly' | 'monthly';
+      mode?: 'singleplayer' | 'multiplayer';
+      limit?: number;
+      offset?: number;
+    } = {}
+  ) {
+    const queryParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined) {
+        queryParams.append(key, String(value));
+      }
+    });
+
+    return this.fetchWithAuth(
+      `/api/v2/tournament/tournament-wins?${queryParams.toString()}`
+    );
+  }
 }
 
 export const adminApi = new AdminApiService();
