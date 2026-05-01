@@ -19,6 +19,7 @@ interface PlayerDetail {
   id: string;
   username: string;
   name: string;
+  email: string;
   type: string;
   role: string;
   country: string;
@@ -349,6 +350,10 @@ export default function PlayerDetailPage() {
                 <dd className="text-sm text-white">{player.name}</dd>
               </div>
               <div>
+                <dt className="text-sm text-gray-400">Email</dt>
+                <dd className="text-sm text-white">{player.email || 'N/A'}</dd>
+              </div>
+              <div>
                 <dt className="text-sm text-gray-400">Country</dt>
                 <dd className="text-sm text-white">{player.country || 'N/A'}</dd>
               </div>
@@ -610,7 +615,7 @@ export default function PlayerDetailPage() {
                                     ? 'bg-green-900/30 text-green-300 border border-green-500/50'
                                     : 'bg-orange-900/30 text-orange-300 border border-orange-500/50'
                                 }`}>
-                                  {win.mode === 'singleplayer' ? 'Single Player' : 'Multiplayer'}
+                                  {win.mode === 'singleplayer' ? 'Career Mode' : 'Multiplayer'}
                                 </span>
                               </div>
                               <div className="text-xs text-gray-400">

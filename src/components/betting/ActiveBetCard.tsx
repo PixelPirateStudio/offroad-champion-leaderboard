@@ -59,7 +59,7 @@ export const ActiveBetCard: React.FC<ActiveBetCardProps> = ({
       // Submit race result with betId
       const result = await submitRaceResult({
         userId: user.id,
-        // profileId: profileId,
+        profileId: profileId,
         raceData,
         betId: bet.id,
       });

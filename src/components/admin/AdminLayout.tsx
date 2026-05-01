@@ -11,6 +11,7 @@ import {
   Bars3Icon,
   XMarkIcon,
   FlagIcon,
+  FireIcon,
 } from '@heroicons/react/24/outline';
 import { useState } from 'react';
 
@@ -28,6 +29,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     { name: 'Players', href: '/admin/players', icon: UsersIcon },
     { name: 'Races', href: '/admin/races', icon: FlagIcon },
     { name: 'Prizes', href: '/admin/prizes', icon: TrophyIcon },
+    { name: 'Bet & Burn', href: '/admin/bets', icon: FireIcon },
     { name: 'Logs', href: '/admin/logs', icon: DocumentTextIcon },
   ];
 
