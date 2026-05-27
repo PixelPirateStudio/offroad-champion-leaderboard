@@ -24,6 +24,7 @@ export function FundsAdjustmentModal({
   currentFunds,
 }: FundsAdjustmentModalProps) {
   const [coins, setCoins] = useState(currentFunds.coins.toString());
+  const [gains, setGains] = useState(currentFunds.gains.toString());
   const [reason, setReason] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -42,6 +43,7 @@ export function FundsAdjustmentModal({
     }
 
     const coinsNum = parseFloat(coins);
+    const gainsNum = parseFloat(gains);
 
     if (isNaN(coinsNum)) {
       setError('Coins value must be a valid number');
@@ -53,12 +55,18 @@ export function FundsAdjustmentModal({
       return;
     }
 
+    if (isNaN(gainsNum)) {
+      setError('Gains value must be a valid number');
+      return;
+    }
+
     setIsSubmitting(true);
     setError('');
 
     try {
       await onConfirm({
         coins: coinsNum,
+        gains: gainsNum,
         reason,
       });
       handleClose();
@@ -71,6 +79,7 @@ export function FundsAdjustmentModal({
 
   const handleClose = () => {
     setCoins(currentFunds.coins.toString());
+    setGains(currentFunds.gains.toString());
     setReason('');
     setError('');
     onClose();
@@ -141,6 +150,25 @@ export function FundsAdjustmentModal({
                   />
                   <p className="mt-1 text-xs text-gray-500">
                     Current: {currentFunds.coins.toLocaleString()}
+                  </p>
+                </div>
+
+                <div>
+                  <label htmlFor="gains" className="block text-sm font-medium text-gray-300 mb-2">
+                    Gains ($)
+                  </label>
+                  <input
+                    type="number"
+                    id="gains"
+                    value={gains}
+                    onChange={(e) => setGains(e.target.value)}
+                    className="w-full px-3 py-2 bg-[#190F31] border border-purple-900/30 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    placeholder="0.00"
+                    step="0.01"
+                    required
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    Current: ${currentFunds.gains.toFixed(2)}
                   </p>
                 </div>
 
