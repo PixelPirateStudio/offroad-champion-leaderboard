@@ -43,14 +43,14 @@ export const RecentEvent = (props: { event: TournamentEvent }) => {
           <span className={`text-sm font-bold text-amber-400 flex-shrink-0`}>Winner:</span>
           <div className={`flex flex-row gap-2 items-baseline min-w-0 flex-1`}>
             <span className={`text-sm font-medium text-gray-400 flex-shrink-0`}>
-              {userDictionary[event.winningUserId ?? ""]?.countryCode
+              {(event.winnerCountry || userDictionary[event.winningUserId ?? ""]?.countryCode)
                 ? getUnicodeFlagIcon(
-                    userDictionary[event.winningUserId ?? ""]?.countryCode ?? ""
+                    event.winnerCountry ?? userDictionary[event.winningUserId ?? ""]?.countryCode ?? ""
                   )
                 : "🏳️"}
             </span>
             <span className={`text-sm font-medium truncate`}>
-              {userDictionary[event.winningUserId ?? ""]?.username ?? "TBD"}
+              {userDictionary[event.winningUserId ?? ""]?.username ?? event.winningUserId ?? "TBD"}
             </span>
           </div>
         </div>

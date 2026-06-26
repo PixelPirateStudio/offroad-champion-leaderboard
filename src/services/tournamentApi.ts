@@ -137,9 +137,22 @@ export interface TournamentSummaryItem {
   timeRemaining: string;
 }
 
+export interface RecentWinner {
+  period: "daily" | "weekly" | "monthly";
+  mode: "singleplayer" | "multiplayer";
+  startDate: string;
+  endDate: string;
+  totalParticipants: number;
+  qualifiedParticipants: number;
+  winnerUsername: string;
+  winningTime: string;
+  prizeAmount: string;
+  status: string;
+}
+
 export interface TournamentSummaryResponse {
   activeTournaments: TournamentSummaryItem[];
-  recentWinners: Record<string, unknown>;
+  recentWinners: RecentWinner[];
 }
 
 export interface GlobalStatsResponse {

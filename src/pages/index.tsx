@@ -5,7 +5,7 @@ import { TournamentEvent } from "../utils/types/events";
 import { Podium } from "../components/v2/AllTimeBest/Podium";
 import { TournamentLeaderboard } from "../components/v2/TournamentLeaderboard/TournamentLeaderboard";
 import { MergedEntry } from "../utils/types/leaderboard";
-import { tournamentApi, LeaderboardResponse } from "../services/tournamentApi";
+import { tournamentApi, LeaderboardResponse, TournamentSummaryResponse } from "../services/tournamentApi";
 import {
   transformLeaderboardResponse,
   generateLeaderboardId,
@@ -252,40 +252,8 @@ export default function Home({
 }
 
 export const getServerSideProps = async () => {
-  const now = new Date();
-  const todayDate = now.toISOString().split("T")[0];
-  const yesterdayUTC = new Date(now);
-  yesterdayUTC.setUTCDate(yesterdayUTC.getUTCDate() - 1);
-  const yesterdayDate = yesterdayUTC.toISOString().split("T")[0];
-  const tomorrowUTC = new Date(now);
-  tomorrowUTC.setUTCDate(tomorrowUTC.getUTCDate() + 1);
-  const tomorrowDate = tomorrowUTC.toISOString().split("T")[0];
-
-  const recentEvents: TournamentEvent[] = [
-    {
-      id: `mp-daily-${todayDate}`,
-      name: "Multiplayer Daily Tournament",
-      startDate: `${todayDate}T07:00:00.000Z`,
-      endDate: `${tomorrowDate}T06:59:00.000Z`,
-      winningUserId: "todd_1298",
-      iconURL: "logo.png",
-      prizeType: "cash",
-      prizeAmount: 5,
-    },
-    {
-      id: `mp-daily-${yesterdayDate}`,
-      name: "Multiplayer Daily Tournament",
-      startDate: `${yesterdayDate}T07:00:00.000Z`,
-      endDate: `${todayDate}T06:59:00.000Z`,
-      winningUserId: "innan_02",
-      iconURL: "logo.png",
-      prizeType: "cash",
-      prizeAmount: 5,
-    },
-  ];
-
   try {
-    // Fetch prizes and all 6 leaderboards in parallel
+    // Fetch prizes, all 6 leaderboards, and recent winners in parallel
     const [
       prizes,
       dailySPResponse,
@@ -294,6 +262,7 @@ export const getServerSideProps = async () => {
       weeklyMPResponse,
       monthlySPResponse,
       monthlyMPResponse,
+      summaryResponse,
     ] = await Promise.all([
       tournamentApi.getPrizes(),
       tournamentApi.getLeaderboard({
@@ -326,6 +295,7 @@ export const getServerSideProps = async () => {
         mode: "multiplayer",
         limit: 100,
       }),
+      tournamentApi.getTournamentSummary({ includeWinners: true }),
     ]);
 
     // Transform all responses
@@ -374,6 +344,24 @@ export const getServerSideProps = async () => {
           return a.fastestTime - b.fastestTime;
         });
     };
+    const usernameToCountry: Record<string, string> = {};
+    [dailySPResponse, dailyMPResponse, weeklySPResponse, weeklyMPResponse, monthlySPResponse, monthlyMPResponse]
+      .flatMap((r) => (r as LeaderboardResponse).leaderboard ?? [])
+      .forEach((entry) => { if (entry.country) usernameToCountry[entry.username] = entry.country; });
+
+    const recentWinners = (summaryResponse as TournamentSummaryResponse).recentWinners ?? [];
+    const recentEvents: TournamentEvent[] = recentWinners.slice(0, 2).map((winner) => ({
+      id: `${winner.mode}-${winner.period}-${winner.startDate}`,
+      name: `${winner.mode === "multiplayer" ? "Multiplayer" : "Career Mode"} ${winner.period.charAt(0).toUpperCase() + winner.period.slice(1)} Tournament`,
+      startDate: winner.startDate,
+      endDate: winner.endDate,
+      winningUserId: winner.winnerUsername,
+      winnerCountry: usernameToCountry[winner.winnerUsername],
+      iconURL: "logo.png",
+      prizeType: "cash",
+      prizeAmount: parseFloat(winner.prizeAmount),
+    }));
+
     console.log("Leaderboard data fetched and transformed successfully.",weeklySPData.entries);
 
     const dailySPApi = dailySPResponse as LeaderboardResponse;
@@ -407,12 +395,11 @@ export const getServerSideProps = async () => {
         recentEvents,
       },
     };
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Failed to fetch leaderboard data:", error);
 
     const now = new Date().toISOString();
 
-    // Return empty arrays on error
     return {
       props: {
         dailySingleEntries: [],
@@ -434,7 +421,7 @@ export const getServerSideProps = async () => {
           monthlySP: { startDate: now, endDate: now },
           monthlyMP: { startDate: now, endDate: now },
         },
-        recentEvents,
+        recentEvents: [],
       },
     };
   }

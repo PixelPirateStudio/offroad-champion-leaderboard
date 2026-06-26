@@ -4,6 +4,7 @@ export type TournamentEvent = {
     startDate: string; // ISO date string
     endDate: string;   // ISO date string
     winningUserId?: string; // Optional, user ID of the winner
+    winnerCountry?: string; // Optional, ISO 3166-1 alpha-2 country code of the winner
     iconURL?: string; // Optional, URL to an icon representing the event
     description?: string; // Optional, brief description of the event
     prizeType?: 'cash' | 'points' | 'other' | string; // Optional, type of prize

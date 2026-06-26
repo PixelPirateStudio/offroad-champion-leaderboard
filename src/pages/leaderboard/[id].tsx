@@ -12,18 +12,18 @@ import { useRouter } from "next/router";
 import { ArrowLeftIcon } from "@heroicons/react/24/outline";
 
 const trackNames: Record<string, string> = {
-  track1: "Mountain Trace",
-  track2: "Snow Caps",
-  track3: "Forest Hills",
-  track4: "Sand Town",
-  track5: "Hell's Kitchen",
-  track6: "Devils Ridge",
-  track7: "River Town",
-  track8: "Doom Valley",
-  track9: "Cactus Grasslands",
-  track10: "Terry's Lane",
-  track11: "Water World",
-  track12: "Savage Swamps",
+  S1_Racing_Loc_1: "Mountain Trace",
+  S1_Racing_Loc_2: "Snow Caps",
+  S1_Racing_Loc_3: "Forest Hills",
+  S1_Racing_Loc_4: "Sand Town",
+  S1_Racing_Loc_5: "Hell's Kitchen",
+  S1_Racing_Loc_6: "Devil's Ridge",
+  S1_Racing_Loc_7: "River Town",
+  S1_Racing_Loc_8: "Doom Valley",
+  S1_Racing_Loc_9: "Cactus Grasslands",
+  S1_Racing_Loc_10: "Terry's Lane",
+  S1_Racing_Loc_11: "Water World",
+  S1_Racing_Loc_12: "Savage Swamps",
 };
 
 interface LeaderboardDetailProps {
