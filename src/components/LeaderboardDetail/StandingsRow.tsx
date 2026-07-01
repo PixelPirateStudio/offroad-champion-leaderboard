@@ -121,20 +121,18 @@ export const StandingsRow = ({
             {races.map((race, index) => (
               <div
                 key={index}
-                className="grid grid-cols-[50px_1fr_140px] items-center p-3 border-b border-[#3D3356] last:border-b-0"
+                className="grid grid-cols-[1fr_60px_60px_140px] items-center p-3 border-b border-[#3D3356] last:border-b-0"
               >
-                <div className="text-gray-400 text-sm text-center">{index + 1}</div>
-                <div className="text-white text-sm">{trackNames[race.trackID] || race.trackID}</div>
-                <div className="text-green-500 text-base text-center flex items-center justify-center gap-1">
-                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                    <path
-                      fillRule="evenodd"
-                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                  {formatTime(race.time)}
+                <div className="text-white text-sm">
+                  {trackNames[race.trackID] || (race.trackID && race.trackID !== "0" ? race.trackID.replace(/S1_|_/g, (m) => m === "S1_" ? "" : " ").trim() : "Unknown Track")}
                 </div>
+                <div className="text-gray-400 text-sm text-center">{index + 1}</div>
+                <div className="flex justify-center">
+                  <svg className="w-5 h-5 text-green-500" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="text-white text-base text-center">{formatTime(race.time)}</div>
               </div>
             ))}
           </div>

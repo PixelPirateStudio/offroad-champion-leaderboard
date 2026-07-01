@@ -12,18 +12,20 @@ import { useRouter } from "next/router";
 import { ArrowLeftIcon } from "@heroicons/react/24/outline";
 
 const trackNames: Record<string, string> = {
-  S1_Racing_Loc_1: "Mountain Trace",
-  S1_Racing_Loc_2: "Snow Caps",
-  S1_Racing_Loc_3: "Forest Hills",
-  S1_Racing_Loc_4: "Sand Town",
-  S1_Racing_Loc_5: "Hell's Kitchen",
-  S1_Racing_Loc_6: "Devil's Ridge",
-  S1_Racing_Loc_7: "River Town",
-  S1_Racing_Loc_8: "Doom Valley",
-  S1_Racing_Loc_9: "Cactus Grasslands",
-  S1_Racing_Loc_10: "Terry's Lane",
-  S1_Racing_Loc_11: "Water World",
-  S1_Racing_Loc_12: "Savage Swamps",
+  S1_Racing_Loc_1: "Mountain Trace",   "1": "Mountain Trace",
+  S1_Racing_Loc_2: "Snow Caps",        "2": "Snow Caps",
+  S1_Racing_Loc_3: "Forest Hills",     "3": "Forest Hills",
+  S1_Racing_Loc_4: "Sand Town",        "4": "Sand Town",
+  S1_Racing_Loc_5: "Hell's Kitchen",   "5": "Hell's Kitchen",
+  S1_Racing_Loc_6: "Devil's Ridge",    "6": "Devil's Ridge",
+  S1_Racing_Loc_7: "River Town",       "7": "River Town",
+  S1_Racing_Loc_8: "Doom Valley",      "8": "Doom Valley",
+  S1_Racing_Loc_9: "Cactus Grasslands","9": "Cactus Grasslands",
+  S1_Racing_Loc_10: "Terry's Lane",    "10": "Terry's Lane",
+  S1_Racing_Loc_11: "Water World",     "11": "Water World",
+  S1_Racing_Loc_12: "Savage Swamps",   "12": "Savage Swamps",
+  S1_Career_Loc_1: "Forest Base 1",
+  S1_Career_Loc_2: "Start Plane 1",
 };
 
 interface LeaderboardDetailProps {

@@ -32,9 +32,12 @@ interface HomeProps {
   monthlyMultiEntries: MergedEntry[];
   recentEvents: TournamentEvent[];
   prizes: {
-    daily: string;
-    weekly: string;
-    monthly: string;
+    dailySP: string;
+    dailyMP: string;
+    weeklySP: string;
+    weeklyMP: string;
+    monthlySP: string;
+    monthlyMP: string;
   };
   tournamentDates: {
     dailySP: { startDate: string; endDate: string };
@@ -124,7 +127,7 @@ export default function Home({
               description="Best times today"
               endedTime={getTimeStatus(tournamentDates.dailyMP.endDate)}
               memberCount={dailyMultiEntries.length}
-              prize={prizes.daily}
+              prize={prizes.dailyMP}
               entries={dailyMultiEntries}
               leaderboardId="daily-multi"
               backgroundColor="bg-black"
@@ -137,7 +140,7 @@ export default function Home({
               description="Best weeks times"
               endedTime={getTimeStatus(tournamentDates.weeklyMP.endDate)}
               memberCount={weeklyMultiEntries.length}
-              prize={prizes.weekly}
+              prize={prizes.weeklyMP}
               entries={weeklyMultiEntries}
               leaderboardId="weekly-multi"
               backgroundColor="bg-[#0A0520]"
@@ -150,7 +153,7 @@ export default function Home({
               description="Best months times"
               endedTime={getTimeStatus(tournamentDates.monthlyMP.endDate)}
               memberCount={monthlyMultiEntries.length}
-              prize={prizes.monthly}
+              prize={prizes.monthlyMP}
               entries={monthlyMultiEntries}
               leaderboardId="monthly-multi"
               backgroundColor="bg-black"
@@ -166,7 +169,7 @@ export default function Home({
               description="Best times today"
               endedTime={getTimeStatus(tournamentDates.dailySP.endDate)}
               memberCount={dailySingleEntries.length}
-              prize={prizes.daily}
+              prize={prizes.dailySP}
               entries={dailySingleEntries}
               leaderboardId="daily"
               backgroundColor="bg-black"
@@ -179,7 +182,7 @@ export default function Home({
               description="Best weeks times"
               endedTime={getTimeStatus(tournamentDates.weeklySP.endDate)}
               memberCount={weeklySingleEntries.length}
-              prize={prizes.weekly}
+              prize={prizes.weeklySP}
               entries={weeklySingleEntries}
               leaderboardId="weekly"
               backgroundColor="bg-[#0A0520]"
@@ -192,7 +195,7 @@ export default function Home({
               description="Best months times"
               endedTime={getTimeStatus(tournamentDates.monthlySP.endDate)}
               memberCount={monthlySingleEntries.length}
-              prize={prizes.monthly}
+              prize={prizes.monthlySP}
               entries={monthlySingleEntries}
               leaderboardId="monthly"
               backgroundColor="bg-black"
@@ -350,7 +353,7 @@ export const getServerSideProps = async () => {
       .forEach((entry) => { if (entry.country) usernameToCountry[entry.username] = entry.country; });
 
     const recentWinners = (summaryResponse as TournamentSummaryResponse).recentWinners ?? [];
-    const recentEvents: TournamentEvent[] = recentWinners.slice(0, 2).map((winner) => ({
+    const recentEvents: TournamentEvent[] = recentWinners.filter((w) => w.period === "daily" && w.mode === "multiplayer").slice(0, 2).map((winner) => ({
       id: `${winner.mode}-${winner.period}-${winner.startDate}`,
       name: `${winner.mode === "multiplayer" ? "Multiplayer" : "Career Mode"} ${winner.period.charAt(0).toUpperCase() + winner.period.slice(1)} Tournament`,
       startDate: winner.startDate,
@@ -380,9 +383,12 @@ export const getServerSideProps = async () => {
         monthlySingleEntries: sortByFastestTime(monthlySPData.entries),
         monthlyMultiEntries: sortByFastestTime(monthlyMPData.entries),
         prizes: {
-          daily: formatPrize(prizes.daily.singleplayer.first),
-          weekly: formatPrize(prizes.weekly.singleplayer.first),
-          monthly: formatPrize(prizes.monthly.singleplayer.first),
+          dailySP: "",
+          dailyMP: formatPrize(prizes.daily.multiplayer.first),
+          weeklySP: prizes.weekly.singleplayer.first.toFixed(2),
+          weeklyMP: formatPrize(prizes.weekly.multiplayer.first),
+          monthlySP: prizes.monthly.singleplayer.first.toFixed(2),
+          monthlyMP: formatPrize(prizes.monthly.multiplayer.first),
         },
         tournamentDates: {
           dailySP: { startDate: dailySPApi.tournament.startDate, endDate: dailySPApi.tournament.endDate },
@@ -409,9 +415,12 @@ export const getServerSideProps = async () => {
         monthlySingleEntries: [],
         monthlyMultiEntries: [],
         prizes: {
-          daily: "$5.00",
-          weekly: "$25.00",
-          monthly: "$300.00",
+          dailySP: "",
+          dailyMP: "$5.00",
+          weeklySP: "0.00",
+          weeklyMP: "$6.00",
+          monthlySP: "0.00",
+          monthlyMP: "$5.00",
         },
         tournamentDates: {
           dailySP: { startDate: now, endDate: now },

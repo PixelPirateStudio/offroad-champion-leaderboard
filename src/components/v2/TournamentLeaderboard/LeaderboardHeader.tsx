@@ -47,10 +47,12 @@ export const LeaderboardHeader = ({
       </div>
 
       {/* Right side - Prize */}
-      <div className="flex items-center gap-2">
-        <img src="/assets/coin.svg" alt="Prize Icon" className="w-8 h-8" />
-        <div className="text-white text-xl font-bold">Prize: {prize}</div>
-      </div>
+      {prize && (
+        <div className="flex items-center gap-2">
+          <img src="/assets/coin.svg" alt="Prize Icon" className="w-8 h-8" />
+          <div className="text-white text-xl font-bold">Prize: {prize}</div>
+        </div>
+      )}
     </div>
   );
 };
