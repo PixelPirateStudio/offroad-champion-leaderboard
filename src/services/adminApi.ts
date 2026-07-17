@@ -195,11 +195,13 @@ class AdminApiService {
   async updatePrizeConfig(
     period: string,
     mode: string,
-    data: {
-      firstPlacePrize: number;
-      secondPlacePrize: number;
-      thirdPlacePrize: number;
-    }
+    data:
+      | {
+          firstPlacePrize: number;
+          secondPlacePrize: number;
+          thirdPlacePrize: number;
+        }
+      | { goldRewards: number[] }
   ) {
     return this.fetchWithAuth(`/api/v2/admin/prizes/${period}/${mode}`, {
       method: "PUT",
