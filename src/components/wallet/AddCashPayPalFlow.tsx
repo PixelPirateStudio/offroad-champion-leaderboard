@@ -4,7 +4,7 @@ import { playerApi } from "@/services/playerApi";
 type AddCashPayPalFlowProps = {
   amountUsd: number;
   onBack: () => void;
-  onApproved: (orderId: string) => void;
+  onApproved: (orderId: string) => Promise<void>;
 };
 
 export default function AddCashPayPalFlow({
@@ -58,7 +58,7 @@ export default function AddCashPayPalFlow({
                   throw new Error("PayPal order ID is missing.");
                 }
 
-                onApproved(data.orderID);
+                await onApproved(data.orderID);
               }}
               onCancel={() => {
                 console.log("PayPal checkout cancelled");
