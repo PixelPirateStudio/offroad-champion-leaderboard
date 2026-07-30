@@ -1,4 +1,4 @@
-import "@/styles/globals.css";
+import "../styles/globals.css";
 import type { AppProps } from "next/app";
 import { HamburgerMenu } from "../components/HamburgerMenu";
 import { AdminAuthProvider } from "@/contexts/AdminAuthContext";
@@ -9,6 +9,7 @@ export default function App({ Component, pageProps }: AppProps) {
   const router = useRouter();
   const isAdminRoute = router.pathname.startsWith("/admin");
   const isLoginRoute = router.pathname === "/login";
+  const isWalletRoute = router.pathname === "/orc-wallet";
 
   // Wrap admin routes with AdminAuthProvider
   if (isAdminRoute) {
@@ -22,7 +23,7 @@ export default function App({ Component, pageProps }: AppProps) {
   // Regular routes with hamburger menu and UserAuthProvider
   return (
     <UserAuthProvider>
-      {!isLoginRoute && (
+      {!isLoginRoute && !isWalletRoute && (
         <header className="flex flex-row items-center gap-4 md:gap-6 lg:gap-8 row-start-2 max-w-7xl w-full absolute top-0 p-4 left-1/2 -translate-x-1/2 z-20">
           <img
             src={"/logo.png"}
