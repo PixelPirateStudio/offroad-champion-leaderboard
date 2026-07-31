@@ -19,6 +19,16 @@ type RedemptionRecord = {
   status?: string;
   requestedAt?: string;
 };
+type DepositRecord = {
+  id?: string;
+  provider?: string;
+  providerOrderId?: string;
+  providerTransactionId?: string;
+  amount?: number | string;
+  currency?: string;
+  status?: string;
+  createdAt?: string;
+};
 type TransactionItem = {
   id: string;
   label: string;
@@ -186,6 +196,7 @@ export default function BetBurn() {
     useState<WithdrawalMethod>("bank");
   const [selectedPayoutMethod, setSelectedPayoutMethod] =
     useState<PayoutMethod | null>(null);
+
   const [bankForm, setBankForm] = useState<BankTransferFormData>({
     accountHolder: "",
     routingNumber: "",
@@ -225,50 +236,61 @@ export default function BetBurn() {
 
   const refreshTransactions = async () => {
     try {
-      const redemptionsData = await playerApi.getMyRedemptions({
-        limit: 50,
-        offset: 0,
-      });
+      const [redemptionsData, depositsData] = await Promise.all([
+        playerApi.getMyRedemptions({
+          limit: 50,
+          offset: 0,
+        }),
+        playerApi.getMyDeposits({
+          limit: 50,
+          offset: 0,
+        }),
+      ]);
+
       const redemptions = Array.isArray(redemptionsData?.redemptions)
         ? (redemptionsData.redemptions as RedemptionRecord[])
         : [];
 
-      const mapped = redemptions.map((redemption, index) => {
+      const deposits = Array.isArray(depositsData?.deposits)
+        ? (depositsData.deposits as DepositRecord[])
+        : [];
+
+      const mappedRedemptions = redemptions.map((redemption, index) => {
         const numericAmount = Number(redemption.amount || 0);
         const amount = Number.isFinite(numericAmount) ? numericAmount : 0;
-        const signedAmount = `-$${Math.abs(amount).toFixed(2)}`;
+
         const statusLabel = redemption.status
           ? redemption.status.toUpperCase()
           : "REQUEST";
 
         return {
-          id: redemption.redemptionId || `tx-${index}`,
+          id: redemption.redemptionId || `redemption-${index}`,
           label: `Cash ${statusLabel}`,
           source: "Redemption",
-          amountLabel: signedAmount,
+          amountLabel: `-$${Math.abs(amount).toFixed(2)}`,
           kind: "neg",
         } as TransactionItem;
       });
 
-      setTransactions((prev) => {
-        const optimistic = prev.filter(
-          (tx) =>
-            tx.id.startsWith("stripe-") ||
-            tx.id.startsWith("paypal-") ||
-            tx.id.startsWith("transfer-"),
-        );
+      const mappedDeposits = deposits.map((deposit, index) => {
+        const numericAmount = Number(deposit.amount || 0);
+        const amount = Number.isFinite(numericAmount) ? numericAmount : 0;
 
-        const merged = [...optimistic];
-        for (const tx of mapped) {
-          if (!merged.some((item) => item.id === tx.id)) {
-            merged.push(tx);
-          }
-        }
-
-        return merged;
+        return {
+          id: deposit.id || deposit.providerTransactionId || `deposit-${index}`,
+          label: "Cash Added",
+          source:
+            deposit.provider?.toLowerCase() === "paypal"
+              ? "PayPal"
+              : deposit.provider || "Deposit",
+          amountLabel: `+$${Math.abs(amount).toFixed(2)}`,
+          kind: "pos",
+        } as TransactionItem;
       });
+
+      setTransactions([...mappedDeposits, ...mappedRedemptions]);
     } catch {
-      // keep optimistic/local transaction list if refresh fails
+      // Keep the existing transaction list if refresh fails.
     }
   };
 
@@ -311,9 +333,10 @@ export default function BetBurn() {
     setTxErr(null);
 
     try {
-      const [profileData, redemptionsData] = await Promise.all([
+      const [profileData, redemptionsData, depositsData] = await Promise.all([
         playerApi.getMyProfile(),
         playerApi.getMyRedemptions({ limit: 50, offset: 0 }),
+        playerApi.getMyDeposits({ limit: 50, offset: 0 }),
       ]);
 
       const p = profileData as Partial<Profile>;
@@ -340,6 +363,30 @@ export default function BetBurn() {
         } as TransactionItem;
       });
 
+      const deposits = Array.isArray(depositsData?.deposits)
+        ? (depositsData.deposits as DepositRecord[])
+        : [];
+
+      const mappedDeposits = deposits.map((deposit, index) => {
+        const numericAmount = Number(deposit.amount || 0);
+        const amount = Number.isFinite(numericAmount) ? numericAmount : 0;
+
+        const provider =
+          deposit.provider?.toLowerCase() === "paypal"
+            ? "PayPal"
+            : deposit.provider || "Deposit";
+
+        return {
+          id: deposit.id || deposit.providerTransactionId || `deposit-${index}`,
+          label: "Cash Added",
+          source: provider,
+          amountLabel: `+$${Math.abs(amount).toFixed(2)}`,
+          kind: "pos",
+        } as TransactionItem;
+      });
+
+      const savedTransactions = [...mappedDeposits, ...mapped];
+
       setTransactions((prev) => {
         const optimistic = prev.filter(
           (tx) =>
@@ -347,12 +394,23 @@ export default function BetBurn() {
             tx.id.startsWith("paypal-") ||
             tx.id.startsWith("transfer-"),
         );
-        const merged = [...optimistic];
-        for (const tx of mapped) {
-          if (!merged.some((item) => item.id === tx.id)) {
-            merged.push(tx);
+
+        const merged = [...savedTransactions];
+
+        for (const tx of optimistic) {
+          const matchingSavedTransaction = merged.some(
+            (saved) =>
+              saved.id === tx.id ||
+              (saved.source === tx.source &&
+                saved.amountLabel === tx.amountLabel &&
+                saved.kind === tx.kind),
+          );
+
+          if (!matchingSavedTransaction) {
+            merged.unshift(tx);
           }
         }
+
         return merged;
       });
     } catch (e: unknown) {

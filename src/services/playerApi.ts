@@ -138,6 +138,49 @@ class PlayerApiService {
     return data;
   }
 
+  async getMyDeposits(params: { limit?: number; offset?: number } = {}) {
+    if (USE_MOCK_API) {
+      return {
+        total: 0,
+        deposits: [],
+        limit: params.limit ?? 50,
+        offset: params.offset ?? 0,
+      };
+    }
+
+    if (!this.profileId) {
+      throw new Error("Missing profileId");
+    }
+
+    const query = new URLSearchParams();
+
+    if (typeof params.limit === "number") {
+      query.set("limit", String(params.limit));
+    }
+
+    if (typeof params.offset === "number") {
+      query.set("offset", String(params.offset));
+    }
+
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+
+    const r = await fetch(
+      `${this.baseUrl}/api/v2/paypal/deposits/${this.profileId}${suffix}`,
+      {
+        method: "GET",
+        headers: this.headers(),
+      },
+    );
+
+    const data = await r.json();
+
+    if (!r.ok) {
+      throw new Error(data?.message || "Failed to fetch deposit transactions");
+    }
+
+    return data;
+  }
+
   async createStripePaymentIntent(params: { amountUsd: number }) {
     if (USE_MOCK_API) {
       return {
@@ -262,7 +305,7 @@ class PlayerApiService {
         status: "pending",
         amount: params.amount,
         email: params.email,
-        paymentMethod: params.paymentMethod
+        paymentMethod: params.paymentMethod,
       };
     }
 
