@@ -6,7 +6,13 @@ import { loadStripe } from "@stripe/stripe-js";
 import { playerApi } from "@/services/playerApi";
 import AddCashStripeFlow from "@/components/wallet/AddCashStripeFlow";
 import AddCashPayPalFlow from "@/components/wallet/AddCashPayPalFlow";
-import { FaUniversity, FaGlobeAmericas, FaStripe } from "react-icons/fa";
+import {
+  FaUniversity,
+  FaGlobeAmericas,
+  FaPaypal,
+  FaStripe,
+} from "react-icons/fa";
+import { SiCashapp, SiCoinbase } from "react-icons/si";
 import { US } from "country-flag-icons/react/3x2";
 import countries from "i18n-iso-countries";
 import enLocale from "i18n-iso-countries/langs/en.json";
@@ -1795,19 +1801,7 @@ export default function BetBurn() {
                           }}
                         >
                           <span style={payoutIconSlot} aria-hidden="true">
-                            <svg
-                              width="36"
-                              height="36"
-                              viewBox="0 0 24 24"
-                              style={payoutLogoGraphic}
-                            >
-                              <circle cx="12" cy="12" r="11" fill="#0052FF" />
-
-                              <path
-                                fill="#FFFFFF"
-                                d="M12 7.2a4.8 4.8 0 1 0 4.5 6.5h-3a2 2 0 1 1 0-3.4h3A4.8 4.8 0 0 0 12 7.2Z"
-                              />
-                            </svg>
+                            <SiCoinbase size={38} color="#0052FF" />
                           </span>
 
                           <span style={payoutLabelGroup}>
@@ -2485,7 +2479,10 @@ export default function BetBurn() {
                         }}
                         onClick={() => setAddCashMethod("bank_transfer")}
                       >
-                        Bank Transfer (ACH)
+                        <span style={addCashMethodIconSlot} aria-hidden="true">
+                          <FaUniversity size={22} color="#FFFFFF" />
+                        </span>
+                        <span style={addCashMethodLabel}>Bank Transfer (ACH)</span>
                       </button>
 
                       <button
@@ -2499,7 +2496,10 @@ export default function BetBurn() {
                         }}
                         onClick={() => setAddCashMethod("cashapp")}
                       >
-                        Cash App Pay
+                        <span style={addCashMethodIconSlot} aria-hidden="true">
+                          <SiCashapp size={24} color="#00D64F" />
+                        </span>
+                        <span style={addCashMethodLabel}>Cash App Pay</span>
                       </button>
 
                       <button
@@ -2513,7 +2513,10 @@ export default function BetBurn() {
                         }}
                         onClick={() => setAddCashMethod("paypal")}
                       >
-                        PayPal
+                        <span style={addCashMethodIconSlot} aria-hidden="true">
+                          <FaPaypal size={24} color="#009CDE" />
+                        </span>
+                        <span style={addCashMethodLabel}>PayPal</span>
                       </button>
 
                       <button
@@ -2527,7 +2530,11 @@ export default function BetBurn() {
                         }}
                         onClick={() => setAddCashMethod("coinbase")}
                       >
-                        Coinbase
+                        <span style={addCashMethodIconSlot} aria-hidden="true">
+                          <SiCoinbase size={25} color="#4D7CFE" />
+                        </span>
+                        <span style={addCashMethodLabel}>Coinbase</span>
+                        <span style={addCashComingSoon}>Coming soon</span>
                       </button>
                     </div>
 
@@ -3194,12 +3201,36 @@ const paymentMethodButton: React.CSSProperties = {
   borderColor: "#FFBD17",
   background: "rgba(20,20,20,0.72)",
   color: "#fff",
+  display: "flex",
+  alignItems: "center",
+  gap: 12,
   fontSize: 15,
   fontWeight: 700,
   cursor: "pointer",
   padding: "0 16px",
   textAlign: "left",
   transition: "background 0.2s ease, border-color 0.2s ease",
+};
+
+const addCashMethodIconSlot: React.CSSProperties = {
+  width: 30,
+  height: 30,
+  flexShrink: 0,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
+
+const addCashMethodLabel: React.CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+};
+
+const addCashComingSoon: React.CSSProperties = {
+  color: "rgba(255,255,255,0.72)",
+  fontSize: 12,
+  fontWeight: 600,
+  whiteSpace: "nowrap",
 };
 
 const addCashContinueButton: React.CSSProperties = {
