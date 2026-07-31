@@ -62,6 +62,13 @@ export default function PrizesPage() {
       Math.round(parseFloat(config.thirdPlacePrize)),
     ];
 
+  const multiplayerRewards = (config: PrizeConfig): number[] =>
+    config.goldRewards ?? [
+      parseFloat(config.firstPlacePrize),
+      parseFloat(config.secondPlacePrize),
+      parseFloat(config.thirdPlacePrize),
+    ];
+
   const handleEdit = (config: PrizeConfig) => {
     setEditingConfig({
       period: config.period,
@@ -69,9 +76,9 @@ export default function PrizesPage() {
       firstPlacePrize: parseFloat(config.firstPlacePrize).toString(),
       secondPlacePrize: parseFloat(config.secondPlacePrize).toString(),
       thirdPlacePrize: parseFloat(config.thirdPlacePrize).toString(),
-      ...(config.mode === 'singleplayer'
-        ? { goldRewards: careerRewards(config).map((v) => v.toString()) }
-        : {}),
+      goldRewards: config.mode === 'singleplayer'
+        ? careerRewards(config).map((v) => v.toString())
+        : multiplayerRewards(config).map((v) => v.toString()),
     });
     setError('');
   };
@@ -85,34 +92,26 @@ export default function PrizesPage() {
 
     if (editingConfig.goldRewards) {
       const rewards = editingConfig.goldRewards.map((v) => parseFloat(v));
+      const isCareer = isCareerMode(editingConfig.mode);
 
       if (rewards.length === 0) {
-        setError('Career Mode needs at least one rewarded place');
+        setError('Need at least one rewarded place');
         return;
       }
 
-      if (rewards.some((v) => isNaN(v) || v < 0 || !Number.isInteger(v))) {
+      if (isCareer && rewards.some((v) => isNaN(v) || v < 0 || !Number.isInteger(v))) {
         setError('Coin rewards must be non-negative whole numbers');
+        return;
+      }
+
+      if (!isCareer && rewards.some((v) => isNaN(v) || v < 0)) {
+        setError('Prize values cannot be negative');
         return;
       }
 
       payload = { goldRewards: rewards };
     } else {
-      const first = parseFloat(editingConfig.firstPlacePrize);
-      const second = parseFloat(editingConfig.secondPlacePrize);
-      const third = parseFloat(editingConfig.thirdPlacePrize);
-
-      if (isNaN(first) || isNaN(second) || isNaN(third)) {
-        setError('All prize values must be valid numbers');
-        return;
-      }
-
-      if (first < 0 || second < 0 || third < 0) {
-        setError('Prize values cannot be negative');
-        return;
-      }
-
-      payload = { firstPlacePrize: first, secondPlacePrize: second, thirdPlacePrize: third };
+      payload = { goldRewards: [] };
     }
 
     setIsSubmitting(true);
@@ -222,12 +221,12 @@ export default function PrizesPage() {
 
                 {isEditing ? (
                   <div className="space-y-3">
-                    {editingConfig.goldRewards ? (
+                    {editingConfig.goldRewards && (
                       <>
                         {editingConfig.goldRewards.map((value, i) => (
                           <div key={i} className="flex items-center gap-2">
-                            <label className="w-20 shrink-0 text-xs text-gray-400">
-                              {ordinal(i + 1)} (coins)
+                            <label className="w-24 shrink-0 text-xs text-gray-400">
+                              {ordinal(i + 1)} {isCareerMode(editingConfig.mode) ? '(coins)' : '($)'}
                             </label>
                             <input
                               type="number"
@@ -241,7 +240,7 @@ export default function PrizesPage() {
                                 })
                               }
                               className="w-full px-3 py-2 bg-[#190F31] border border-purple-900/30 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-                              step="1"
+                              step={isCareerMode(editingConfig.mode) ? '1' : '0.01'}
                               min="0"
                             />
                             <button
@@ -271,48 +270,6 @@ export default function PrizesPage() {
                           <PlusIcon className="h-4 w-4" />
                           Add place
                         </button>
-                      </>
-                    ) : (
-                      <>
-                        <div>
-                          <label className="block text-xs text-gray-400 mb-1">1st Place ($)</label>
-                          <input
-                            type="number"
-                            value={editingConfig.firstPlacePrize}
-                            onChange={(e) =>
-                              setEditingConfig({ ...editingConfig, firstPlacePrize: e.target.value })
-                            }
-                            className="w-full px-3 py-2 bg-[#190F31] border border-purple-900/30 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-                            step="0.01"
-                            min="0"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-gray-400 mb-1">2nd Place ($)</label>
-                          <input
-                            type="number"
-                            value={editingConfig.secondPlacePrize}
-                            onChange={(e) =>
-                              setEditingConfig({ ...editingConfig, secondPlacePrize: e.target.value })
-                            }
-                            className="w-full px-3 py-2 bg-[#190F31] border border-purple-900/30 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-                            step="0.01"
-                            min="0"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-gray-400 mb-1">3rd Place ($)</label>
-                          <input
-                            type="number"
-                            value={editingConfig.thirdPlacePrize}
-                            onChange={(e) =>
-                              setEditingConfig({ ...editingConfig, thirdPlacePrize: e.target.value })
-                            }
-                            className="w-full px-3 py-2 bg-[#190F31] border border-purple-900/30 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-                            step="0.01"
-                            min="0"
-                          />
-                        </div>
                       </>
                     )}
                     <div className="flex gap-2 pt-2">
@@ -348,24 +305,17 @@ export default function PrizesPage() {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    <div className="flex justify-between items-center bg-[#190F31] rounded-lg p-3">
-                      <span className="text-sm text-gray-400">1st Place</span>
-                      <span className="text-lg font-bold text-yellow-400">
-                        {formatPrize(config.mode, config.firstPlacePrize)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center bg-[#190F31] rounded-lg p-3">
-                      <span className="text-sm text-gray-400">2nd Place</span>
-                      <span className="text-lg font-bold text-gray-300">
-                        {formatPrize(config.mode, config.secondPlacePrize)}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center bg-[#190F31] rounded-lg p-3">
-                      <span className="text-sm text-gray-400">3rd Place</span>
-                      <span className="text-lg font-bold text-orange-400">
-                        {formatPrize(config.mode, config.thirdPlacePrize)}
-                      </span>
-                    </div>
+                    {multiplayerRewards(config).map((amount, i) => (
+                      <div
+                        key={i}
+                        className="flex justify-between items-center bg-[#190F31] rounded-lg p-3"
+                      >
+                        <span className="text-sm text-gray-400">{ordinal(i + 1)} Place</span>
+                        <span className={`text-lg font-bold ${placeColor(i + 1)}`}>
+                          ${parseFloat(amount.toString()).toFixed(2)}
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
