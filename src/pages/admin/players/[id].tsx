@@ -40,8 +40,10 @@ interface PlayerDetail {
 
 interface Transaction {
   id: string;
-  cardClaimCode: string;
+  type: string;
+  provider: string;
   value: number;
+  currency: string;
   status: string;
   createdAt: string;
 }
@@ -294,7 +296,9 @@ export default function PlayerDetailPage() {
             <div className="flex items-center">
               <ShieldExclamationIcon className="h-6 w-6 text-red-300 mr-3" />
               <div>
-                <p className="text-red-200 font-medium">This account is frozen</p>
+                <p className="text-red-200 font-medium">
+                  This account is frozen
+                </p>
                 <p className="text-red-300 text-sm">
                   The player cannot login or perform any actions
                 </p>
@@ -335,7 +339,9 @@ export default function PlayerDetailPage() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Basic Info */}
           <div className="bg-[#0E0A1B] border border-purple-900/30 rounded-lg p-6">
-            <h2 className="text-xl font-semibold text-white mb-4">Account Information</h2>
+            <h2 className="text-xl font-semibold text-white mb-4">
+              Account Information
+            </h2>
             <dl className="space-y-3">
               <div>
                 <dt className="text-sm text-gray-400">User ID</dt>
@@ -351,11 +357,13 @@ export default function PlayerDetailPage() {
               </div>
               <div>
                 <dt className="text-sm text-gray-400">Email</dt>
-                <dd className="text-sm text-white">{player.email || 'N/A'}</dd>
+                <dd className="text-sm text-white">{player.email || "N/A"}</dd>
               </div>
               <div>
                 <dt className="text-sm text-gray-400">Country</dt>
-                <dd className="text-sm text-white">{player.country || 'N/A'}</dd>
+                <dd className="text-sm text-white">
+                  {player.country || "N/A"}
+                </dd>
               </div>
               <div>
                 <dt className="text-sm text-gray-400">Account Type</dt>
@@ -378,7 +386,7 @@ export default function PlayerDetailPage() {
               <div>
                 <dt className="text-sm text-gray-400">Created At</dt>
                 <dd className="text-sm text-white">
-                  {dayjs(player.createdAt).format('MMMM D, YYYY h:mm A')}
+                  {dayjs(player.createdAt).format("MMMM D, YYYY h:mm A")}
                 </dd>
               </div>
             </dl>
@@ -411,18 +419,26 @@ export default function PlayerDetailPage() {
 
           {/* Stats */}
           <div className="bg-[#0E0A1B] border border-purple-900/30 rounded-lg p-6">
-            <h2 className="text-xl font-semibold text-white mb-4">Statistics</h2>
+            <h2 className="text-xl font-semibold text-white mb-4">
+              Statistics
+            </h2>
             <dl className="space-y-3">
               <div>
-                <dt className="text-sm text-gray-400">Total Races (All Time)</dt>
+                <dt className="text-sm text-gray-400">
+                  Total Races (All Time)
+                </dt>
                 <dd className="text-lg text-white font-semibold">
                   {player.totalRacesAllTime || 0}
                 </dd>
               </div>
               <div>
-                <dt className="text-sm text-gray-400">Best Daily Rank (All Time)</dt>
+                <dt className="text-sm text-gray-400">
+                  Best Daily Rank (All Time)
+                </dt>
                 <dd className="text-lg text-white font-semibold">
-                  {player.bestDailyRankAllTime ? `#${player.bestDailyRankAllTime}` : 'N/A'}
+                  {player.bestDailyRankAllTime
+                    ? `#${player.bestDailyRankAllTime}`
+                    : "N/A"}
                 </dd>
               </div>
             </dl>
@@ -430,7 +446,9 @@ export default function PlayerDetailPage() {
 
           {/* Transactions */}
           <div className="bg-[#0E0A1B] border border-purple-900/30 rounded-lg p-6">
-            <h2 className="text-xl font-semibold text-white mb-4">Recent Transactions</h2>
+            <h2 className="text-xl font-semibold text-white mb-4">
+              Recent Transactions
+            </h2>
             {transactions && transactions.length > 0 ? (
               <div className="space-y-3">
                 {transactions.slice(0, 5).map((tx) => (
@@ -440,19 +458,21 @@ export default function PlayerDetailPage() {
                   >
                     <div>
                       <div className="text-sm text-white font-medium">
-                        {tx.cardClaimCode || 'N/A'}
+                        {tx.type.replace("_", " ")} via {tx.provider}
                       </div>
                       <div className="text-xs text-gray-400">
-                        {dayjs(tx.createdAt).format('MMM D, YYYY')}
+                        {dayjs(tx.createdAt).format("MMM D, YYYY")}
                       </div>
                     </div>
                     <div className="text-right">
                       <div className="text-sm text-green-400 font-semibold">
-                        ${tx.value.toFixed(2)}
+                        ${Number(tx.value ?? 0).toFixed(2)}
                       </div>
                       <div
                         className={`text-xs ${
-                          tx.status === 'active' ? 'text-green-400' : 'text-gray-400'
+                          tx.status === "active"
+                            ? "text-green-400"
+                            : "text-gray-400"
                         }`}
                       >
                         {tx.status}
@@ -475,7 +495,7 @@ export default function PlayerDetailPage() {
               onClick={toggleRaces}
               className="text-purple-400 hover:text-purple-300 text-sm"
             >
-              {showRaces ? 'Hide' : 'Show'} Races
+              {showRaces ? "Hide" : "Show"} Races
             </button>
           </div>
 
@@ -502,14 +522,18 @@ export default function PlayerDetailPage() {
                           )}
                         </div>
                         <div className="text-xs text-gray-400">
-                          {dayjs(race.createdAt).format('MMM D, YYYY h:mm A')}
+                          {dayjs(race.createdAt).format("MMM D, YYYY h:mm A")}
                         </div>
                         {race.flagged && race.flagReason && (
-                          <div className="text-xs text-red-400 mt-1">{race.flagReason}</div>
+                          <div className="text-xs text-red-400 mt-1">
+                            {race.flagReason}
+                          </div>
                         )}
                       </div>
                       <div className="text-right mr-4">
-                        <div className="text-lg font-mono text-white">{race.raceTime}s</div>
+                        <div className="text-lg font-mono text-white">
+                          {race.raceTime}s
+                        </div>
                         <div className="text-xs text-gray-500">Race Time</div>
                       </div>
                       <Link
@@ -539,50 +563,66 @@ export default function PlayerDetailPage() {
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center">
               <TrophyIcon className="h-6 w-6 text-yellow-400 mr-3" />
-              <h2 className="text-xl font-semibold text-white">Tournament Wins</h2>
+              <h2 className="text-xl font-semibold text-white">
+                Tournament Wins
+              </h2>
             </div>
             <button
               onClick={toggleTournamentWins}
               className="text-purple-400 hover:text-purple-300 text-sm"
             >
-              {showTournamentWins ? 'Hide' : 'Show'} Wins
+              {showTournamentWins ? "Hide" : "Show"} Wins
             </button>
           </div>
 
           {showTournamentWins && (
             <div>
               {tournamentWinsLoading ? (
-                <p className="text-gray-400 text-sm">Loading tournament wins...</p>
+                <p className="text-gray-400 text-sm">
+                  Loading tournament wins...
+                </p>
               ) : tournamentWins && tournamentWins.tournamentWins.length > 0 ? (
                 <div className="space-y-6">
                   {/* Summary Stats */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="bg-[#190F31] rounded-lg p-4">
-                      <div className="text-sm text-gray-400 mb-1">Total Wins</div>
+                      <div className="text-sm text-gray-400 mb-1">
+                        Total Wins
+                      </div>
                       <div className="text-2xl font-bold text-yellow-400">
                         {tournamentWins.summary.totalWins}
                       </div>
                     </div>
                     <div className="bg-[#190F31] rounded-lg p-4">
-                      <div className="text-sm text-gray-400 mb-1">Total Prize Money</div>
+                      <div className="text-sm text-gray-400 mb-1">
+                        Total Prize Money
+                      </div>
                       <div className="text-2xl font-bold text-green-400">
                         ${tournamentWins.summary.totalPrizesMoney.toFixed(2)}
                       </div>
                     </div>
                     <div className="bg-[#190F31] rounded-lg p-4">
-                      <div className="text-sm text-gray-400 mb-1">Wins by Period</div>
+                      <div className="text-sm text-gray-400 mb-1">
+                        Wins by Period
+                      </div>
                       <div className="text-sm text-white space-y-1">
                         <div className="flex justify-between">
                           <span className="text-gray-400">Daily:</span>
-                          <span className="font-semibold">{tournamentWins.summary.byPeriod.daily}</span>
+                          <span className="font-semibold">
+                            {tournamentWins.summary.byPeriod.daily}
+                          </span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-400">Weekly:</span>
-                          <span className="font-semibold">{tournamentWins.summary.byPeriod.weekly}</span>
+                          <span className="font-semibold">
+                            {tournamentWins.summary.byPeriod.weekly}
+                          </span>
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-400">Monthly:</span>
-                          <span className="font-semibold">{tournamentWins.summary.byPeriod.monthly}</span>
+                          <span className="font-semibold">
+                            {tournamentWins.summary.byPeriod.monthly}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -590,7 +630,9 @@ export default function PlayerDetailPage() {
 
                   {/* Tournament Wins List */}
                   <div>
-                    <h3 className="text-lg font-semibold text-white mb-3">Recent Wins</h3>
+                    <h3 className="text-lg font-semibold text-white mb-3">
+                      Recent Wins
+                    </h3>
                     <div className="space-y-3">
                       {tournamentWins.tournamentWins.map((win) => (
                         <div
@@ -601,39 +643,54 @@ export default function PlayerDetailPage() {
                             {/* Left side - Tournament Info */}
                             <div className="flex-1">
                               <div className="flex items-center gap-2 mb-2">
-                                <span className={`px-2 py-1 rounded text-xs font-medium ${
-                                  win.period === 'daily'
-                                    ? 'bg-blue-900/30 text-blue-300 border border-blue-500/50'
-                                    : win.period === 'weekly'
-                                    ? 'bg-purple-900/30 text-purple-300 border border-purple-500/50'
-                                    : 'bg-yellow-900/30 text-yellow-300 border border-yellow-500/50'
-                                }`}>
-                                  {win.period.charAt(0).toUpperCase() + win.period.slice(1)}
+                                <span
+                                  className={`px-2 py-1 rounded text-xs font-medium ${
+                                    win.period === "daily"
+                                      ? "bg-blue-900/30 text-blue-300 border border-blue-500/50"
+                                      : win.period === "weekly"
+                                        ? "bg-purple-900/30 text-purple-300 border border-purple-500/50"
+                                        : "bg-yellow-900/30 text-yellow-300 border border-yellow-500/50"
+                                  }`}
+                                >
+                                  {win.period.charAt(0).toUpperCase() +
+                                    win.period.slice(1)}
                                 </span>
-                                <span className={`px-2 py-1 rounded text-xs font-medium ${
-                                  win.mode === 'singleplayer'
-                                    ? 'bg-green-900/30 text-green-300 border border-green-500/50'
-                                    : 'bg-orange-900/30 text-orange-300 border border-orange-500/50'
-                                }`}>
-                                  {win.mode === 'singleplayer' ? 'Career Mode' : 'Multiplayer'}
+                                <span
+                                  className={`px-2 py-1 rounded text-xs font-medium ${
+                                    win.mode === "singleplayer"
+                                      ? "bg-green-900/30 text-green-300 border border-green-500/50"
+                                      : "bg-orange-900/30 text-orange-300 border border-orange-500/50"
+                                  }`}
+                                >
+                                  {win.mode === "singleplayer"
+                                    ? "Career Mode"
+                                    : "Multiplayer"}
                                 </span>
                               </div>
                               <div className="text-xs text-gray-400">
-                                {dayjs(win.startDate).format('MMM D, YYYY')} - {dayjs(win.endDate).format('MMM D, YYYY')}
+                                {dayjs(win.startDate).format("MMM D, YYYY")} -{" "}
+                                {dayjs(win.endDate).format("MMM D, YYYY")}
                               </div>
                               <div className="text-xs text-gray-500 mt-1">
-                                {win.qualifiedParticipants} / {win.totalParticipants} qualified participants
+                                {win.qualifiedParticipants} /{" "}
+                                {win.totalParticipants} qualified participants
                               </div>
                             </div>
 
                             {/* Right side - Stats */}
                             <div className="flex items-center gap-6">
                               <div className="text-right">
-                                <div className="text-sm text-gray-400">Winning Time</div>
-                                <div className="text-lg font-mono text-white">{win.winningTime.toFixed(3)}s</div>
+                                <div className="text-sm text-gray-400">
+                                  Winning Time
+                                </div>
+                                <div className="text-lg font-mono text-white">
+                                  {win.winningTime.toFixed(3)}s
+                                </div>
                               </div>
                               <div className="text-right">
-                                <div className="text-sm text-gray-400">Prize</div>
+                                <div className="text-sm text-gray-400">
+                                  Prize
+                                </div>
                                 <div className="text-lg font-semibold text-green-400">
                                   ${win.prizeAmount.toFixed(2)}
                                 </div>
@@ -648,12 +705,15 @@ export default function PlayerDetailPage() {
                   {/* Pagination info */}
                   {tournamentWins.pagination.hasMore && (
                     <div className="text-center text-sm text-gray-400 mt-4">
-                      Showing {tournamentWins.tournamentWins.length} of {tournamentWins.pagination.total} total wins
+                      Showing {tournamentWins.tournamentWins.length} of{" "}
+                      {tournamentWins.pagination.total} total wins
                     </div>
                   )}
                 </div>
               ) : (
-                <p className="text-gray-400 text-sm">No tournament wins found</p>
+                <p className="text-gray-400 text-sm">
+                  No tournament wins found
+                </p>
               )}
             </div>
           )}
