@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Elements } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
-import { playerApi } from "@/services/playerApi";
+import { playerApi, type StripePayoutQuote } from "@/services/playerApi";
 import AddCashStripeFlow from "@/components/wallet/AddCashStripeFlow";
 import AddCashPayPalFlow from "@/components/wallet/AddCashPayPalFlow";
 import {
@@ -220,12 +220,9 @@ export default function BetBurn() {
   const [transferSubmitErr, setTransferSubmitErr] = useState<string | null>(
     null,
   );
-  const [connectStatus, setConnectStatus] = useState<{
-    complete: boolean;
-    chargesEnabled: boolean;
-    payoutsEnabled: boolean;
-  } | null>(null);
   const [connectLoading, setConnectLoading] = useState(false);
+  const [stripePayoutQuote, setStripePayoutQuote] =
+    useState<StripePayoutQuote | null>(null);
 
   const mapProfile = (p: Partial<Profile>): Profile => ({
     gains: Number(p.gains) || 0,
@@ -374,11 +371,6 @@ export default function BetBurn() {
       setTxLoading(false);
     }
 
-    // Load Stripe Connect status in the background (non-blocking)
-    playerApi
-      .getConnectStatus()
-      .then(setConnectStatus)
-      .catch(() => {});
   };
 
   useEffect(() => {
@@ -397,10 +389,7 @@ export default function BetBurn() {
       (connectParam === "return" || connectParam === "refresh") &&
       localStorage.getItem("playerToken")
     ) {
-      playerApi
-        .getConnectStatus()
-        .then(setConnectStatus)
-        .catch(() => {});
+      void playerApi.getConnectStatus().catch(() => {});
       // Clean up the query param without a full page reload
       const url = new URL(window.location.href);
       url.searchParams.delete("connect");
@@ -458,6 +447,16 @@ export default function BetBurn() {
     parsedTransferAmount > 0 &&
     parsedTransferAmount <= maxTransferUsd;
   const transferAmountLabel = `$${(hasValidTransferAmount ? parsedTransferAmount : 0).toFixed(2)}`;
+  const stripePayoutFeeLabel = `$${Number(
+    stripePayoutQuote?.feeAmount || 0,
+  ).toFixed(2)}`;
+  const stripePayoutNetLabel = `$${Number(
+    stripePayoutQuote?.netAmount || 0,
+  ).toFixed(2)}`;
+  const payoutSuccessAmountLabel =
+    transferMethod === "stripe" && stripePayoutQuote
+      ? stripePayoutNetLabel
+      : transferAmountLabel;
   const bankFormReady =
     bankForm.accountHolder.trim() !== "" &&
     bankForm.routingNumber.trim() !== "" &&
@@ -651,6 +650,47 @@ export default function BetBurn() {
     setAddCashErr("Coinbase payment option is coming soon.");
   };
 
+  const prepareStripePayout = async () => {
+    if (!hasValidTransferAmount) {
+      setTransferSubmitErr("Enter a valid withdrawal amount.");
+      return;
+    }
+
+    setTransferSubmitting(true);
+    setConnectLoading(true);
+    setTransferSubmitErr(null);
+
+    try {
+      if (!USE_MOCK_API) {
+        const status = await playerApi.getConnectStatus();
+
+        if (!status.complete || !status.payoutsEnabled) {
+          const origin = window.location.origin;
+          const { onboardingUrl } = await playerApi.getConnectOnboardingUrl({
+            returnUrl: `${origin}/orc-wallet?connect=return`,
+            refreshUrl: `${origin}/orc-wallet?connect=refresh`,
+          });
+          window.location.href = onboardingUrl;
+          return;
+        }
+      }
+
+      const quote = await playerApi.getStripePayoutQuote({
+        amount: parsedTransferAmount,
+      });
+      setStripePayoutQuote(quote);
+      setTransferMethod("stripe");
+      setTransferStage("confirm");
+    } catch (e: unknown) {
+      setTransferSubmitErr(
+        e instanceof Error ? e.message : "Unable to prepare Stripe payout",
+      );
+    } finally {
+      setConnectLoading(false);
+      setTransferSubmitting(false);
+    }
+  };
+
   const submitStripePayout = async () => {
     const transferUsd = Number.isFinite(parsedTransferAmount)
       ? parsedTransferAmount
@@ -668,30 +708,25 @@ export default function BetBurn() {
     }
 
     setTransferSubmitting(true);
-    setConnectLoading(true);
     setTransferSubmitErr(null);
 
     try {
-      let status = connectStatus;
-
-      if (!USE_MOCK_API && !status) {
-        status = await playerApi.getConnectStatus();
-        setConnectStatus(status);
-      }
-
-      if (!USE_MOCK_API && status && !status.complete) {
-        const origin = window.location.origin;
-        const { onboardingUrl } = await playerApi.getConnectOnboardingUrl({
-          returnUrl: `${origin}/orc-wallet?connect=return`,
-          refreshUrl: `${origin}/orc-wallet?connect=refresh`,
-        });
-        window.location.href = onboardingUrl;
-        return;
-      }
-
       const result = await playerApi.createStripePayout({
         amount: transferUsd,
       });
+
+      setStripePayoutQuote((current) => ({
+        grossAmount: String(
+          result?.grossAmount || current?.grossAmount || transferUsd,
+        ),
+        feeAmount: String(result?.feeAmount || current?.feeAmount || 0),
+        netAmount: String(
+          result?.netAmount || current?.netAmount || transferUsd,
+        ),
+        currency: String(result?.currency || current?.currency || "USD"),
+        feePercent: current?.feePercent || 0,
+        fixedFeeCents: current?.fixedFeeCents || 0,
+      }));
 
       const transferTx: TransactionItem = {
         id: String(result?.redemptionId || `stripe-payout-${Date.now()}`),
@@ -719,7 +754,6 @@ export default function BetBurn() {
         e instanceof Error ? e.message : "Stripe withdrawal submission failed";
       setTransferSubmitErr(message);
     } finally {
-      setConnectLoading(false);
       setTransferSubmitting(false);
     }
   };
@@ -814,6 +848,7 @@ export default function BetBurn() {
     setTransferStage("none");
     setAddCashStage("entry");
     setStripeClientSecret(null);
+    setStripePayoutQuote(null);
   };
 
   return (
@@ -953,9 +988,12 @@ export default function BetBurn() {
 
                         <input
                           value={transferAmount}
-                          onChange={(e) =>
-                            setTransferAmount(sanitizeUsdInput(e.target.value))
-                          }
+                          onChange={(e) => {
+                            setTransferAmount(
+                              sanitizeUsdInput(e.target.value),
+                            );
+                            setStripePayoutQuote(null);
+                          }}
                           inputMode="decimal"
                           pattern="\\d*(\\.\\d{0,2})?"
                           style={transferAmountInput}
@@ -1817,6 +1855,7 @@ export default function BetBurn() {
                           style={transferSecondaryButton}
                           onClick={() => {
                             setSelectedPayoutMethod(null);
+                            setStripePayoutQuote(null);
                             setTransferStage("none");
                           }}
                         >
@@ -1860,7 +1899,7 @@ export default function BetBurn() {
 
                             if (selectedPayoutMethod === "stripe") {
                               setTransferMethod("stripe");
-                              void submitStripePayout();
+                              void prepareStripePayout();
                               return;
                             }
 
@@ -2208,10 +2247,17 @@ export default function BetBurn() {
                 {transferStage === "confirm" && (
                   <div style={addCashConfirmScene}>
                     <div style={addCashConfirmPanel}>
-                      <div style={addCashConfirmTitle}>Confirm</div>
+                      <div style={addCashConfirmTitle}>
+                        {transferMethod === "stripe"
+                          ? "Confirm Stripe Withdrawal"
+                          : "Confirm"}
+                      </div>
 
                       <div style={addCashConfirmAmount}>
-                        {transferAmountLabel} USD
+                        {transferMethod === "stripe"
+                          ? stripePayoutNetLabel
+                          : transferAmountLabel}{" "}
+                        USD
                       </div>
 
                       <div style={addCashConfirmDetails}>
@@ -2220,7 +2266,9 @@ export default function BetBurn() {
                           <span style={addCashConfirmValue}>
                             {transferMethod === "bank"
                               ? "Bank Account"
-                              : "PayPal"}
+                              : transferMethod === "stripe"
+                                ? "Stripe connected account"
+                                : "PayPal"}
                           </span>
                         </div>
 
@@ -2229,33 +2277,60 @@ export default function BetBurn() {
                           <span style={addCashConfirmValue}>ORC Wallet</span>
                         </div>
 
-                        <div style={addCashConfirmRow}>
-                          <span style={addCashConfirmLabel}>Destination:</span>
-                          <span style={addCashConfirmValue}>
-                            {withdrawalEmail}
-                          </span>
-                        </div>
+                        {transferMethod !== "stripe" && (
+                          <div style={addCashConfirmRow}>
+                            <span style={addCashConfirmLabel}>Destination:</span>
+                            <span style={addCashConfirmValue}>
+                              {withdrawalEmail}
+                            </span>
+                          </div>
+                        )}
 
                         <div style={addCashConfirmRow}>
                           <span style={addCashConfirmLabel}>
                             Funds will arrive:
                           </span>
                           <span style={addCashConfirmValue}>
-                            1–3 business days
+                            {transferMethod === "stripe"
+                              ? "Stripe payout schedule applies"
+                              : "1–3 business days"}
                           </span>
                         </div>
 
                         <div style={addCashConfirmRow}>
-                          <span style={addCashConfirmLabel}>Fee:</span>
+                          <span style={addCashConfirmLabel}>
+                            {transferMethod === "stripe"
+                              ? "Wallet deduction:"
+                              : "Fee:"}
+                          </span>
                           <span style={addCashConfirmValue}>
-                            Processed by payout provider
+                            {transferMethod === "stripe"
+                              ? transferAmountLabel
+                              : "Processed by payout provider"}
                           </span>
                         </div>
 
+                        {transferMethod === "stripe" && (
+                          <div style={addCashConfirmRow}>
+                            <span style={addCashConfirmLabel}>
+                              Stripe payout fee:
+                            </span>
+                            <span style={addCashConfirmValue}>
+                              -{stripePayoutFeeLabel}
+                            </span>
+                          </div>
+                        )}
+
                         <div style={addCashConfirmRow}>
-                          <span style={addCashConfirmLabel}>Total:</span>
+                          <span style={addCashConfirmLabel}>
+                            {transferMethod === "stripe"
+                              ? "Winner receives:"
+                              : "Total:"}
+                          </span>
                           <span style={addCashConfirmValue}>
-                            {transferAmountLabel}
+                            {transferMethod === "stripe"
+                              ? stripePayoutNetLabel
+                              : transferAmountLabel}
                           </span>
                         </div>
                       </div>
@@ -2269,7 +2344,11 @@ export default function BetBurn() {
                       <button
                         type="button"
                         style={addCashConfirmPrimaryButton}
-                        onClick={() => void submitTransfer()}
+                        onClick={() =>
+                          void (transferMethod === "stripe"
+                            ? submitStripePayout()
+                            : submitTransfer())
+                        }
                         disabled={transferSubmitting}
                       >
                         {transferSubmitting ? "Submitting..." : "Transfer"}
@@ -2278,7 +2357,13 @@ export default function BetBurn() {
                       <button
                         type="button"
                         style={addCashConfirmBackButton}
-                        onClick={() => setTransferStage("details")}
+                        onClick={() =>
+                          setTransferStage(
+                            transferMethod === "stripe"
+                              ? "method"
+                              : "details",
+                          )
+                        }
                         disabled={transferSubmitting}
                       >
                         Back
@@ -2293,8 +2378,8 @@ export default function BetBurn() {
                       <div style={payoutSuccessHeading}>Congratulations!</div>
 
                       <div style={payoutSuccessAmount}>
-                        Your payout of <strong>{transferAmountLabel}</strong> is
-                        on its way
+                        Your payout of <strong>{payoutSuccessAmountLabel}</strong>{" "}
+                        is on its way
                       </div>
 
                       <div style={payoutSuccessDivider} />
@@ -2390,6 +2475,7 @@ export default function BetBurn() {
                           setTransferAmount("0.00");
                           setTransferSubmitErr(null);
                           setSelectedPayoutMethod(null);
+                          setStripePayoutQuote(null);
                           void loadWalletData();
                         }}
                       >
@@ -2403,6 +2489,7 @@ export default function BetBurn() {
                           setTransferAmount("0.00");
                           setTransferSubmitErr(null);
                           setSelectedPayoutMethod(null);
+                          setStripePayoutQuote(null);
                           void loadWalletData();
                         }}
                       >

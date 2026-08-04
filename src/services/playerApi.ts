@@ -1,6 +1,15 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
 const USE_MOCK_API = process.env.NEXT_PUBLIC_USE_MOCK_API === "true";
 
+export type StripePayoutQuote = {
+  grossAmount: string;
+  feeAmount: string;
+  netAmount: string;
+  currency: string;
+  feePercent: number;
+  fixedFeeCents: number;
+};
+
 const MOCK_PROFILE = {
   id: "ea24471a-559f-44b5-8fea-4b6491f9f4ea",
   gains: 80000,
@@ -307,11 +316,19 @@ class PlayerApiService {
 
   async createStripePayout(params: { amount: number }) {
     if (USE_MOCK_API) {
+      const grossAmountCents = Math.round(params.amount * 100);
+      const feeAmountCents = Math.ceil(grossAmountCents * 0.005) + 25;
+      const netAmountCents = grossAmountCents - feeAmountCents;
+
       return {
         success: true,
         redemptionId: `mock-stripe-payout-${Date.now()}`,
         status: "completed",
-        amount: params.amount,
+        amount: (grossAmountCents / 100).toFixed(2),
+        grossAmount: (grossAmountCents / 100).toFixed(2),
+        feeAmount: (feeAmountCents / 100).toFixed(2),
+        netAmount: (netAmountCents / 100).toFixed(2),
+        currency: "USD",
       };
     }
 
@@ -333,6 +350,48 @@ class PlayerApiService {
       );
     }
     return data;
+  }
+
+  async getStripePayoutQuote(params: {
+    amount: number;
+  }): Promise<StripePayoutQuote> {
+    if (USE_MOCK_API) {
+      const grossAmountCents = Math.round(params.amount * 100);
+      const feeAmountCents = Math.ceil(grossAmountCents * 0.005) + 25;
+      const netAmountCents = grossAmountCents - feeAmountCents;
+
+      if (netAmountCents <= 0) {
+        throw new Error(
+          "Withdrawal amount must be greater than the Stripe payout fee",
+        );
+      }
+
+      return {
+        grossAmount: (grossAmountCents / 100).toFixed(2),
+        feeAmount: (feeAmountCents / 100).toFixed(2),
+        netAmount: (netAmountCents / 100).toFixed(2),
+        currency: "USD",
+        feePercent: 0.5,
+        fixedFeeCents: 25,
+      };
+    }
+
+    const query = new URLSearchParams({ amount: String(params.amount) });
+    const r = await fetch(
+      `${this.baseUrl}/api/v2/redemptions/stripe-payout/quote?${query}`,
+      {
+        method: "GET",
+        headers: this.headers(),
+      },
+    );
+
+    const data = await this.readResponse(r);
+    if (!r.ok) {
+      throw new Error(
+        data?.message || data?.error || "Failed to quote Stripe payout",
+      );
+    }
+    return data as StripePayoutQuote;
   }
 
   async getConnectStatus(): Promise<{
