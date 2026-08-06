@@ -1,6 +1,15 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
 const USE_MOCK_API = process.env.NEXT_PUBLIC_USE_MOCK_API === "true";
 
+export type StripePayoutQuote = {
+  grossAmount: string;
+  feeAmount: string;
+  netAmount: string;
+  currency: string;
+  feePercent: number;
+  fixedFeeCents: number;
+};
+
 const MOCK_PROFILE = {
   id: "ea24471a-559f-44b5-8fea-4b6491f9f4ea",
   gains: 80000,
@@ -66,6 +75,21 @@ class PlayerApiService {
     }
   }
 
+  private async readResponse(response: Response) {
+    const contentType = response.headers.get("content-type") || "";
+    const text = await response.text();
+
+    if (!text) {
+      return {};
+    }
+
+    if (contentType.includes("application/json")) {
+      return JSON.parse(text);
+    }
+
+    return { message: text };
+  }
+
   async login(username: string, password: string) {
     if (USE_MOCK_API) {
       const token = "mock-token";
@@ -84,7 +108,7 @@ class PlayerApiService {
       body: JSON.stringify({ username, password }),
     });
 
-    const data = await r.json();
+    const data = await this.readResponse(r);
     if (!r.ok) throw new Error(data?.message || "Login failed");
 
     // backend returns { user, profile, token }
@@ -103,7 +127,7 @@ class PlayerApiService {
       headers: this.headers(),
     });
 
-    const data = await r.json();
+    const data = await this.readResponse(r);
     if (!r.ok) throw new Error(data?.message || "Failed to fetch profile");
     return data;
   }
@@ -133,7 +157,7 @@ class PlayerApiService {
       headers: this.headers(),
     });
 
-    const data = await r.json();
+    const data = await this.readResponse(r);
     if (!r.ok) throw new Error(data?.message || "Failed to fetch redemptions");
     return data;
   }
@@ -172,7 +196,7 @@ class PlayerApiService {
       },
     );
 
-    const data = await r.json();
+    const data = await this.readResponse(r);
 
     if (!r.ok) {
       throw new Error(data?.message || "Failed to fetch deposit transactions");
@@ -181,7 +205,10 @@ class PlayerApiService {
     return data;
   }
 
-  async createStripePaymentIntent(params: { amountUsd: number }) {
+  async createStripePaymentIntent(params: {
+    amountUsd: number;
+    paymentMethodTypes?: Array<"us_bank_account" | "cashapp">;
+  }) {
     if (USE_MOCK_API) {
       return {
         clientSecret: "pi_mock_secret",
@@ -192,10 +219,13 @@ class PlayerApiService {
     const r = await fetch(`${this.baseUrl}/api/v2/stripe/payment-intents`, {
       method: "POST",
       headers: this.headers(),
-      body: JSON.stringify({ amountUsd: params.amountUsd }),
+      body: JSON.stringify({
+        amountUsd: params.amountUsd,
+        paymentMethodTypes: params.paymentMethodTypes,
+      }),
     });
 
-    const data = await r.json();
+    const data = await this.readResponse(r);
     if (!r.ok)
       throw new Error(
         data?.message || data?.error || "Failed to create payment intent",
@@ -221,7 +251,7 @@ class PlayerApiService {
       },
     );
 
-    const data = await r.json();
+    const data = await this.readResponse(r);
     if (!r.ok)
       throw new Error(
         data?.message || data?.error || "Failed to finalize payment",
@@ -252,7 +282,7 @@ class PlayerApiService {
       }),
     });
 
-    const data = await r.json();
+    const data = await this.readResponse(r);
     if (!r.ok) {
       throw new Error(
         data?.message || data?.error || "Failed to create PayPal order",
@@ -284,7 +314,7 @@ class PlayerApiService {
       }),
     });
 
-    const data = await r.json();
+    const data = await this.readResponse(r);
     if (!r.ok) {
       throw new Error(
         data?.message || data?.error || "Failed to capture PayPal order",
@@ -322,9 +352,89 @@ class PlayerApiService {
       }),
     });
 
-    const data = await r.json();
+    const data = await this.readResponse(r);
     if (!r.ok) throw new Error(data?.message || "Failed to create redemption");
     return data;
+  }
+
+  async createStripePayout(params: { amount: number }) {
+    if (USE_MOCK_API) {
+      const grossAmountCents = Math.round(params.amount * 100);
+      const feeAmountCents = Math.ceil(grossAmountCents * 0.005) + 25;
+      const netAmountCents = grossAmountCents - feeAmountCents;
+
+      return {
+        success: true,
+        redemptionId: `mock-stripe-payout-${Date.now()}`,
+        status: "completed",
+        amount: (grossAmountCents / 100).toFixed(2),
+        grossAmount: (grossAmountCents / 100).toFixed(2),
+        feeAmount: (feeAmountCents / 100).toFixed(2),
+        netAmount: (netAmountCents / 100).toFixed(2),
+        currency: "USD",
+      };
+    }
+
+    if (!this.profileId) throw new Error("Missing profileId");
+
+    const r = await fetch(`${this.baseUrl}/api/v2/redemptions/stripe-payout`, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({
+        profileId: this.profileId,
+        amount: params.amount,
+      }),
+    });
+
+    const data = await this.readResponse(r);
+    if (!r.ok) {
+      throw new Error(
+        data?.message || data?.error || "Failed to create Stripe payout",
+      );
+    }
+    return data;
+  }
+
+  async getStripePayoutQuote(params: {
+    amount: number;
+  }): Promise<StripePayoutQuote> {
+    if (USE_MOCK_API) {
+      const grossAmountCents = Math.round(params.amount * 100);
+      const feeAmountCents = Math.ceil(grossAmountCents * 0.005) + 25;
+      const netAmountCents = grossAmountCents - feeAmountCents;
+
+      if (netAmountCents <= 0) {
+        throw new Error(
+          "Withdrawal amount must be greater than the Stripe payout fee",
+        );
+      }
+
+      return {
+        grossAmount: (grossAmountCents / 100).toFixed(2),
+        feeAmount: (feeAmountCents / 100).toFixed(2),
+        netAmount: (netAmountCents / 100).toFixed(2),
+        currency: "USD",
+        feePercent: 0.5,
+        fixedFeeCents: 25,
+      };
+    }
+
+    const query = new URLSearchParams({ amount: String(params.amount) });
+    const r = await fetch(
+      `${this.baseUrl}/api/v2/redemptions/stripe-payout/quote?${query}`,
+      {
+        method: "GET",
+        headers: this.headers(),
+      },
+    );
+
+    const data = await this.readResponse(r);
+    if (!r.ok) {
+      throw new Error(
+        data?.message || data?.error || "Failed to quote Stripe payout",
+      );
+    }
+    return data as StripePayoutQuote;
   }
 
   async getConnectStatus(): Promise<{
@@ -347,7 +457,7 @@ class PlayerApiService {
       headers: this.headers(),
     });
 
-    const data = await r.json();
+    const data = await this.readResponse(r);
     if (!r.ok)
       throw new Error(data?.message || "Failed to fetch connect status");
     return data;
@@ -370,7 +480,7 @@ class PlayerApiService {
       },
     );
 
-    const data = await r.json();
+    const data = await this.readResponse(r);
     if (!r.ok)
       throw new Error(data?.message || "Failed to get onboarding link");
     return data;
@@ -404,7 +514,7 @@ class PlayerApiService {
       }),
     });
 
-    const data = await r.json();
+    const data = await this.readResponse(r);
     if (!r.ok) throw new Error(data?.message || "Registration failed");
 
     this.setSession(data.token, data.user?.profileId ?? data.profile?.id);

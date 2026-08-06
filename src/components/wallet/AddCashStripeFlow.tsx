@@ -6,15 +6,19 @@ type StripeStep = "payment" | "confirm";
 
 type AddCashStripeFlowProps = {
   amountUsd: number;
+  paymentMethodLabel: string;
   paymentIntentId: string;
   onBack: () => void;
+  onPending: () => void;
   onSuccess: () => void;
 };
 
 export default function AddCashStripeFlow({
   amountUsd,
+  paymentMethodLabel,
   paymentIntentId,
   onBack,
+  onPending,
   onSuccess,
 }: AddCashStripeFlowProps) {
   const stripe = useStripe();
@@ -23,6 +27,7 @@ export default function AddCashStripeFlow({
   const [step, setStep] = useState<StripeStep>("payment");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [paymentElementReady, setPaymentElementReady] = useState(false);
 
   const handleContinue = async () => {
     if (!elements) return;
@@ -63,16 +68,17 @@ export default function AddCashStripeFlow({
 
     const status = result.paymentIntent?.status;
 
-    if (
-      status === "succeeded" ||
-      status === "processing" ||
-      status === "requires_capture"
-    ) {
+    if (status === "succeeded" || status === "requires_capture") {
       try {
-        await playerApi.finalizeStripePaymentIntent({
+        const finalizeResult = await playerApi.finalizeStripePaymentIntent({
           paymentIntentId: result.paymentIntent?.id || paymentIntentId,
         });
-        onSuccess();
+
+        if (finalizeResult?.credited) {
+          onSuccess();
+        } else {
+          onPending();
+        }
         return;
       } catch (finalizeError) {
         setError(
@@ -83,6 +89,18 @@ export default function AddCashStripeFlow({
         setBusy(false);
         return;
       }
+    }
+
+    if (status === "processing") {
+      try {
+        await playerApi.finalizeStripePaymentIntent({
+          paymentIntentId: result.paymentIntent?.id || paymentIntentId,
+        });
+      } catch {
+        // The backend webhook remains the source of truth for ACH settlement.
+      }
+      onPending();
+      return;
     }
 
     if (!status) {
@@ -98,16 +116,34 @@ export default function AddCashStripeFlow({
   return (
     <div style={flowWrap}>
       <div style={step === "payment" ? elementWrap : hiddenElementMount}>
-        <PaymentElement options={{ layout: "tabs" }} />
+        {!paymentElementReady && (
+          <div style={loadingText}>Loading Stripe payment form...</div>
+        )}
+        <PaymentElement
+          options={{ layout: "tabs" }}
+          onReady={() => setPaymentElementReady(true)}
+          onLoadError={(event) => {
+            setPaymentElementReady(false);
+            setError(
+              event.error?.message ||
+                "Stripe could not load the payment form. Check that the frontend publishable key and backend secret key are both in test mode.",
+            );
+          }}
+        />
       </div>
 
       {step === "payment" && (
         <div style={panel}>
-          <div style={panelTitle}>Enter payment information</div>
+          <div style={panelTitle}>Enter {paymentMethodLabel} information</div>
 
           {error && <div style={errorText}>{error}</div>}
 
-          <button style={submitButton} type="button" onClick={handleContinue} disabled={busy || !stripe || !elements}>
+          <button
+            style={submitButton}
+            type="button"
+            onClick={handleContinue}
+            disabled={busy || !stripe || !elements || !paymentElementReady}
+          >
             {busy ? "Loading..." : "Continue"}
           </button>
 
@@ -126,9 +162,13 @@ export default function AddCashStripeFlow({
             <span style={confirmLabel}>To:</span>
             <span style={confirmValue}>USD Wallet</span>
             <span style={confirmLabel}>From:</span>
-            <span style={confirmValue}>Bank</span>
+            <span style={confirmValue}>{paymentMethodLabel}</span>
             <span style={confirmLabel}>Funds will arrive:</span>
-            <span style={confirmValue}>Instantly</span>
+            <span style={confirmValue}>
+              {paymentMethodLabel === "Bank Transfer"
+                ? "After bank transfer clears"
+                : "After payment confirmation"}
+            </span>
             <span style={confirmLabel}>Fee:</span>
             <span style={confirmValue}>Free</span>
             <span style={confirmLabel}>Total:</span>
@@ -159,8 +199,8 @@ export default function AddCashStripeFlow({
 }
 
 const flowWrap: React.CSSProperties = {
-  width: "min(420px, 92vw)",
-  marginTop: 44,
+  width: "min(360px, 92vw)",
+  marginTop: 0,
   marginBottom: 24,
 };
 
@@ -183,6 +223,14 @@ const elementWrap: React.CSSProperties = {
   background: "#fff",
   borderRadius: 8,
   padding: 12,
+  minHeight: 180,
+};
+
+const loadingText: React.CSSProperties = {
+  color: "#444",
+  fontSize: 14,
+  fontWeight: 700,
+  marginBottom: 12,
 };
 
 const hiddenElementMount: React.CSSProperties = {
@@ -211,9 +259,9 @@ const backButton: React.CSSProperties = {
   width: "100%",
   height: 34,
   borderRadius: 999,
-  border: "1px solid rgba(255,255,255,0.4)",
+  border: "1px solid rgba(17,17,17,0.25)",
   background: "transparent",
-  color: "#fff",
+  color: "#111",
   fontWeight: 700,
   cursor: "pointer",
 };
