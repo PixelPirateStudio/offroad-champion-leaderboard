@@ -504,6 +504,28 @@ export default function BetBurn() {
     parsedTransferAmount > 0 &&
     parsedTransferAmount <= maxTransferUsd;
   const transferAmountLabel = `$${(hasValidTransferAmount ? parsedTransferAmount : 0).toFixed(2)}`;
+  const paypalWithdrawalFee =
+    transferMethod === "paypal"
+      ? taxClassification === "us"
+        ? 0.25
+        : Number((parsedTransferAmount * 0.02).toFixed(2))
+      : 0;
+
+  const amountAfterPayPalFee = Math.max(
+    0,
+    Number((parsedTransferAmount - paypalWithdrawalFee).toFixed(2)),
+  );
+
+  const withdrawalFeeLabel =
+    transferMethod === "paypal"
+      ? `$${paypalWithdrawalFee.toFixed(2)}`
+      : "Processed by payout provider";
+
+  const withdrawalTotalLabel =
+    transferMethod === "paypal"
+      ? `$${amountAfterPayPalFee.toFixed(2)}`
+      : transferAmountLabel;
+  
   const bankFormReady =
     bankForm.accountHolder.trim() !== "" &&
     bankForm.routingNumber.trim() !== "" &&
@@ -2165,16 +2187,26 @@ export default function BetBurn() {
                         </div>
 
                         <div style={addCashConfirmRow}>
-                          <span style={addCashConfirmLabel}>Fee:</span>
+                          <span style={addCashConfirmLabel}>
+                            {transferMethod === "paypal"
+                              ? "PayPal Fee:"
+                              : "Fee:"}
+                          </span>
+
                           <span style={addCashConfirmValue}>
-                            Processed by payout provider
+                            {withdrawalFeeLabel}
                           </span>
                         </div>
 
                         <div style={addCashConfirmRow}>
-                          <span style={addCashConfirmLabel}>Total:</span>
+                          <span style={addCashConfirmLabel}>
+                            {transferMethod === "paypal"
+                              ? "You Will Receive:"
+                              : "Total:"}
+                          </span>
+
                           <span style={addCashConfirmValue}>
-                            {transferAmountLabel}
+                            {withdrawalTotalLabel}
                           </span>
                         </div>
                       </div>
@@ -2212,8 +2244,8 @@ export default function BetBurn() {
                       <div style={payoutSuccessHeading}>Congratulations!</div>
 
                       <div style={payoutSuccessAmount}>
-                        Your payout of <strong>{transferAmountLabel}</strong> is
-                        on its way
+                        Your payout of <strong>{withdrawalTotalLabel}</strong>{" "}
+                        is on its way
                       </div>
 
                       <div style={payoutSuccessDivider} />
