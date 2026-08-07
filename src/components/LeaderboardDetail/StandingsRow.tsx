@@ -12,6 +12,7 @@ interface StandingsRowProps {
   isWinner?: boolean;
   races?: RaceDetails[];
   trackNames?: Record<string, string>;
+  prize?: string;
 }
 
 export const StandingsRow = ({
@@ -24,6 +25,7 @@ export const StandingsRow = ({
   isWinner = false,
   races = [],
   trackNames = {},
+  prize,
 }: StandingsRowProps) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -68,6 +70,11 @@ export const StandingsRow = ({
             {isWinner && (
               <span className="text-orange-400 text-base font-bold flex-shrink-0">
                 Winner!
+              </span>
+            )}
+            {prize && (
+              <span className="text-yellow-400 text-sm font-semibold flex-shrink-0 bg-yellow-400/10 px-2 py-0.5 rounded-full">
+                {prize}
               </span>
             )}
           </div>

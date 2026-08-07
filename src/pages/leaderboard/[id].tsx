@@ -38,6 +38,7 @@ interface LeaderboardDetailProps {
     weekly: string;
     monthly: string;
   };
+  prizeList: string[];
 }
 
 export default function LeaderboardDetail({
@@ -48,6 +49,7 @@ export default function LeaderboardDetail({
   prizeAmount,
   qualifyingRaces,
   prizes,
+  prizeList,
 }: LeaderboardDetailProps) {
   const router = useRouter();
 
@@ -214,6 +216,7 @@ export default function LeaderboardDetail({
                     isWinner={index === 0}
                     races={entry.races.sort((a, b) => a.time - b.time)}
                     trackNames={trackNames}
+                    prize={prizeList[index]}
                   />
                 ))}
               </div>
@@ -312,6 +315,7 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
 
     // Get the appropriate prize
     const prize = prizes[period][mode].first;
+    const isCareer = mode === 'singleplayer';
 
     // Transform response
     const leaderboardData = transformLeaderboardResponse(
@@ -339,19 +343,29 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
         return a.fastestTime - b.fastestTime;
       });
 
+    const tierConfig = prizes[period][mode];
+    const prizeList: string[] = tierConfig.goldRewards
+      ? tierConfig.goldRewards.map((amount) => isCareer ? `${amount} coins` : formatPrize(amount))
+      : [
+          isCareer ? `${tierConfig.first} coins` : formatPrize(tierConfig.first),
+          isCareer ? `${tierConfig.second} coins` : formatPrize(tierConfig.second),
+          isCareer ? `${tierConfig.third} coins` : formatPrize(tierConfig.third),
+        ];
+
     return {
       props: {
         sortedEntries,
         leaderboardName: leaderboardData.leaderboard.name,
         startDate: apiResponse.tournament.startDate,
         endDate: apiResponse.tournament.endDate,
-        prizeAmount: formatPrize(prize),
+        prizeAmount: isCareer ? `${prize} coins` : formatPrize(prize),
         qualifyingRaces: apiResponse.tournament.qualifyingRaces,
         prizes: {
           daily: formatPrize(prizes.daily.singleplayer.first),
           weekly: formatPrize(prizes.weekly.singleplayer.first),
           monthly: formatPrize(prizes.monthly.singleplayer.first),
         },
+        prizeList,
       },
     };
   } catch (error) {
@@ -370,6 +384,7 @@ export const getServerSideProps: GetServerSideProps = async (context) => {
           weekly: "$25.00",
           monthly: "$300.00",
         },
+        prizeList: ["$0.00", "$0.00", "$0.00"],
       },
     };
   }

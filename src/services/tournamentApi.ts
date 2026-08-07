@@ -161,6 +161,7 @@ export interface PrizeConfigTier {
   first: number;
   second: number;
   third: number;
+  goldRewards?: number[];
 }
 
 export interface PrizesResponse {
