@@ -3,7 +3,14 @@
 import { useEffect, useState } from "react";
 import { Elements } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
-import { playerApi, type StripePayoutQuote } from "@/services/playerApi";
+import {
+  playerApi,
+  type StripePayoutQuote,
+  type CoinbaseAsset,
+  type CoinbaseCharge,
+  type CoinbaseDepositQuote,
+  type CoinbasePayoutQuote,
+} from "@/services/playerApi";
 import AddCashStripeFlow from "@/components/wallet/AddCashStripeFlow";
 import AddCashPayPalFlow from "@/components/wallet/AddCashPayPalFlow";
 import {
@@ -49,6 +56,7 @@ type AddCashStage =
   | "entry"
   | "payment"
   | "paypal-checkout"
+  | "coinbase-checkout"
   | "confirm"
   | "success";
 
@@ -67,7 +75,7 @@ type TransferStage =
   | "verify"
   | "confirm"
   | "success";
-type WithdrawalMethod = "bank" | "paypal" | "stripe";
+type WithdrawalMethod = "bank" | "paypal" | "stripe" | "coinbase";
 type PayoutMethod = "bank" | "paypal" | "stripe" | "coinbase";
 
 type TaxClassification = "us" | "non-us";
@@ -132,6 +140,85 @@ const TAB_LABELS: Record<TabKey, string> = {
   transactions: "Transactions",
 };
 
+const toErrorMessage = (reason: unknown, fallback: string) =>
+  reason instanceof Error && reason.message ? reason.message : fallback;
+
+// pending deposits aren't credited yet, so show the status instead of
+// making it look like the cash already landed
+const depositLabel = (status?: string) =>
+  !status || status.toLowerCase() === "succeeded"
+    ? "Cash Added"
+    : `Cash Added (${status.toUpperCase()})`;
+
+type FeeRow = { label: string; value: string; negative?: boolean };
+
+// fee breakdown for crypto deposits and payouts. shows up on the dark method
+// screen and inside the white withdraw panel, hence the dark flag
+const CryptoFeeBreakdown = ({
+  dark,
+  rows,
+  totalLabel,
+  totalValue,
+  footRows = [],
+}: {
+  dark: boolean;
+  rows: FeeRow[];
+  totalLabel: string;
+  totalValue: string;
+  footRows?: FeeRow[];
+}) => {
+  const baseColor = dark ? "#FFFFFF" : "#111111";
+
+  const renderRow = ({ label, value, negative }: FeeRow, key: string) => (
+    <div key={key} style={cryptoFeeRow}>
+      <span style={{ ...cryptoFeeLabel, color: baseColor }}>{label}</span>
+      <span
+        style={{
+          ...cryptoFeeValue,
+          color: negative ? "#E5484D" : baseColor,
+        }}
+      >
+        {value}
+      </span>
+    </div>
+  );
+
+  return (
+    <div
+      style={{
+        ...cryptoFeePanel,
+        border: dark ? "1px solid rgba(255,255,255,0.28)" : "1px solid #E2E2E2",
+        background: dark ? "rgba(0,0,0,0.38)" : "#F7F7F7",
+      }}
+    >
+      {rows.map((row, index) => renderRow(row, `row-${index}`))}
+
+      <div
+        style={{
+          ...cryptoFeeDivider,
+          background: dark ? "rgba(255,255,255,0.22)" : "#E2E2E2",
+        }}
+      />
+
+      <div style={cryptoFeeRow}>
+        <span style={{ ...cryptoFeeTotalLabel, color: baseColor }}>
+          {totalLabel}
+        </span>
+        <span
+          style={{
+            ...cryptoFeeTotalValue,
+            color: dark ? "#FFBD17" : "#111111",
+          }}
+        >
+          {totalValue}
+        </span>
+      </div>
+
+      {footRows.map((row, index) => renderRow(row, `foot-${index}`))}
+    </div>
+  );
+};
+
 export default function BetBurn() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -158,6 +245,11 @@ export default function BetBurn() {
   const [stripePaymentIntentId, setStripePaymentIntentId] = useState<
     string | null
   >(null);
+  const [coinbaseDepositQuote, setCoinbaseDepositQuote] =
+    useState<CoinbaseDepositQuote | null>(null);
+  const [coinbaseCharge, setCoinbaseCharge] = useState<CoinbaseCharge | null>(
+    null,
+  );
   const [addCashErr, setAddCashErr] = useState<string | null>(null);
   const [addCashLoading, setAddCashLoading] = useState(false);
   const [transactions, setTransactions] = useState<TransactionItem[]>([]);
@@ -234,6 +326,10 @@ export default function BetBurn() {
   const [connectLoading, setConnectLoading] = useState(false);
   const [stripePayoutQuote, setStripePayoutQuote] =
     useState<StripePayoutQuote | null>(null);
+  const [coinbasePayoutQuote, setCoinbasePayoutQuote] =
+    useState<CoinbasePayoutQuote | null>(null);
+  const [coinbaseAsset, setCoinbaseAsset] = useState<CoinbaseAsset>("BTC");
+  const [coinbaseAddress, setCoinbaseAddress] = useState<string>("");
 
   const mapProfile = (p: Partial<Profile>): Profile => ({
     gains: Number(p.gains) || 0,
@@ -243,7 +339,7 @@ export default function BetBurn() {
 
   const refreshTransactions = async () => {
     try {
-      const [redemptionsData, depositsData] = await Promise.all([
+      const [redemptionsResult, depositsResult] = await Promise.allSettled([
         playerApi.getMyRedemptions({
           limit: 50,
           offset: 0,
@@ -253,6 +349,13 @@ export default function BetBurn() {
           offset: 0,
         }),
       ]);
+
+      const redemptionsData =
+        redemptionsResult.status === "fulfilled"
+          ? redemptionsResult.value
+          : null;
+      const depositsData =
+        depositsResult.status === "fulfilled" ? depositsResult.value : null;
 
       const redemptions = Array.isArray(redemptionsData?.redemptions)
         ? (redemptionsData.redemptions as RedemptionRecord[])
@@ -285,7 +388,7 @@ export default function BetBurn() {
 
         return {
           id: deposit.id || deposit.providerTransactionId || `deposit-${index}`,
-          label: "Cash Added",
+          label: depositLabel(deposit.status),
           source:
             deposit.provider?.toLowerCase() === "paypal"
               ? "PayPal"
@@ -340,14 +443,43 @@ export default function BetBurn() {
     setTxErr(null);
 
     try {
-      const [profileData, redemptionsData, depositsData] = await Promise.all([
-        playerApi.getMyProfile(),
-        playerApi.getMyRedemptions({ limit: 50, offset: 0 }),
-        playerApi.getMyDeposits({ limit: 50, offset: 0 }),
-      ]);
+      // allSettled, not all - a failing history call shouldn't take the
+      // balance down with it
+      const [profileResult, redemptionsResult, depositsResult] =
+        await Promise.allSettled([
+          playerApi.getMyProfile(),
+          playerApi.getMyRedemptions({ limit: 50, offset: 0 }),
+          playerApi.getMyDeposits({ limit: 50, offset: 0 }),
+        ]);
 
-      const p = profileData as Partial<Profile>;
-      setProfile(mapProfile(p));
+      if (profileResult.status === "fulfilled") {
+        const p = profileResult.value as Partial<Profile>;
+        setProfile(mapProfile(p));
+      } else {
+        setErr(
+          toErrorMessage(profileResult.reason, "Failed to load wallet data"),
+        );
+      }
+
+      const historyFailure =
+        redemptionsResult.status === "rejected"
+          ? redemptionsResult.reason
+          : depositsResult.status === "rejected"
+            ? depositsResult.reason
+            : null;
+
+      if (historyFailure) {
+        setTxErr(
+          toErrorMessage(historyFailure, "Failed to load transaction history"),
+        );
+      }
+
+      const redemptionsData =
+        redemptionsResult.status === "fulfilled"
+          ? redemptionsResult.value
+          : null;
+      const depositsData =
+        depositsResult.status === "fulfilled" ? depositsResult.value : null;
 
       const redemptions = Array.isArray(redemptionsData?.redemptions)
         ? (redemptionsData.redemptions as RedemptionRecord[])
@@ -385,7 +517,7 @@ export default function BetBurn() {
 
         return {
           id: deposit.id || deposit.providerTransactionId || `deposit-${index}`,
-          label: "Cash Added",
+          label: depositLabel(deposit.status),
           source: provider,
           amountLabel: `+$${Math.abs(amount).toFixed(2)}`,
           kind: "pos",
@@ -460,6 +592,7 @@ export default function BetBurn() {
       setAddCashStage("entry");
       setStripeClientSecret(null);
       setStripePaymentIntentId(null);
+      setCoinbaseCharge(null);
       setAddCashErr(null);
       setAddCashLoading(false);
     }
@@ -532,10 +665,18 @@ export default function BetBurn() {
   const stripePayoutNetLabel = `$${Number(
     stripePayoutQuote?.netAmount || 0,
   ).toFixed(2)}`;
+  const coinbasePayoutFeeLabel = `$${Number(
+    coinbasePayoutQuote?.feeAmount || 0,
+  ).toFixed(2)}`;
+  const coinbasePayoutNetLabel = `$${Number(
+    coinbasePayoutQuote?.netAmount || 0,
+  ).toFixed(2)}`;
   const payoutSuccessAmountLabel =
     transferMethod === "stripe" && stripePayoutQuote
       ? stripePayoutNetLabel
-      : withdrawalTotalLabel;
+      : transferMethod === "coinbase" && coinbasePayoutQuote
+        ? coinbasePayoutNetLabel
+        : withdrawalTotalLabel;
   const bankFormReady =
     bankForm.accountHolder.trim() !== "" &&
     bankForm.routingNumber.trim() !== "" &&
@@ -543,12 +684,63 @@ export default function BetBurn() {
     bankForm.accountType.trim() !== "";
   const payPalFormReady =
     payPalForm.fullName.trim() !== "" && payPalForm.paypalEmail.trim() !== "";
+  const coinbaseFormReady = coinbaseAddress.trim() !== "";
   const detailsFormReady =
     transferMethod === "stripe"
       ? true
       : transferMethod === "bank"
         ? bankFormReady
-        : payPalFormReady;
+        : transferMethod === "coinbase"
+          ? coinbaseFormReady
+          : payPalFormReady;
+
+  // refresh the deposit fee preview when the method or amount changes
+  useEffect(() => {
+    if (addCashMethod !== "coinbase") {
+      setCoinbaseDepositQuote(null);
+      return;
+    }
+
+    void previewCoinbaseDepositFee();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addCashMethod, parsedAddCashAmount]);
+
+  // quote the payout fee when the withdraw form opens and again on every
+  // asset switch, so the 4% is on screen before they commit
+  useEffect(() => {
+    if (transferMethod !== "coinbase" || transferStage !== "details") {
+      return;
+    }
+
+    if (!hasValidTransferAmount) {
+      setCoinbasePayoutQuote(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    void playerApi
+      .getCoinbasePayoutQuote({
+        amountUsd: parsedTransferAmount,
+        asset: coinbaseAsset,
+      })
+      .then((quote) => {
+        if (!cancelled) setCoinbasePayoutQuote(quote);
+      })
+      .catch(() => {
+        if (!cancelled) setCoinbasePayoutQuote(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    transferMethod,
+    transferStage,
+    coinbaseAsset,
+    parsedTransferAmount,
+    hasValidTransferAmount,
+  ]);
   const identityFormReady =
     identityForm.legalName.trim() !== "" &&
     identityForm.address.trim() !== "" &&
@@ -725,8 +917,58 @@ export default function BetBurn() {
     }
   };
 
-  const startCoinbaseComingSoon = () => {
-    setAddCashErr("Coinbase payment option is coming soon.");
+  const startCoinbaseAddCashFlow = async () => {
+    if (!Number.isFinite(parsedAddCashAmount) || parsedAddCashAmount < 1) {
+      setAddCashErr("Minimum crypto deposit is $1.00");
+      return;
+    }
+
+    setAddCashLoading(true);
+    setAddCashErr(null);
+
+    try {
+      // charge response already has the fee breakdown on it, no need for a
+      // separate quote call here
+      const charge = await playerApi.createCoinbaseCharge({
+        amountUsd: parsedAddCashAmount,
+      });
+
+      setCoinbaseCharge(charge);
+      setCoinbaseDepositQuote({
+        grossAmount: charge.grossAmount,
+        feeAmount: charge.feeAmount,
+        netAmount: charge.netAmount,
+        feePercent: charge.feePercent,
+        gains: charge.gains,
+        currency: charge.currency,
+      });
+      setAddCashStage("coinbase-checkout");
+    } catch (e: unknown) {
+      setAddCashErr(
+        e instanceof Error ? e.message : "Unable to start the crypto deposit",
+      );
+    } finally {
+      setAddCashLoading(false);
+    }
+  };
+
+  // shows the 2% before they actually create a charge
+  const previewCoinbaseDepositFee = async () => {
+    if (!Number.isFinite(parsedAddCashAmount) || parsedAddCashAmount < 1) {
+      setCoinbaseDepositQuote(null);
+      return;
+    }
+
+    try {
+      setCoinbaseDepositQuote(
+        await playerApi.getCoinbaseDepositQuote({
+          amountUsd: parsedAddCashAmount,
+        }),
+      );
+    } catch {
+      // don't block the flow on a failed preview, the charge call re-quotes
+      setCoinbaseDepositQuote(null);
+    }
   };
 
   const prepareStripePayout = async () => {
@@ -832,6 +1074,95 @@ export default function BetBurn() {
       const message =
         e instanceof Error ? e.message : "Stripe withdrawal submission failed";
       setTransferSubmitErr(message);
+    } finally {
+      setTransferSubmitting(false);
+    }
+  };
+
+  const prepareCoinbasePayout = async () => {
+    if (!hasValidTransferAmount) {
+      setTransferSubmitErr("Enter a valid withdrawal amount.");
+      return;
+    }
+
+    if (!coinbaseFormReady) {
+      setTransferSubmitErr("Enter the destination wallet address.");
+      return;
+    }
+
+    setTransferSubmitting(true);
+    setTransferSubmitErr(null);
+
+    try {
+      // passing the asset also gets us the crypto amount at current spot
+      const quote = await playerApi.getCoinbasePayoutQuote({
+        amountUsd: parsedTransferAmount,
+        asset: coinbaseAsset,
+      });
+
+      setCoinbasePayoutQuote(quote);
+      setTransferMethod("coinbase");
+      setTransferStage("confirm");
+    } catch (e: unknown) {
+      setTransferSubmitErr(
+        e instanceof Error ? e.message : "Unable to quote the crypto payout",
+      );
+    } finally {
+      setTransferSubmitting(false);
+    }
+  };
+
+  const submitCoinbasePayout = async () => {
+    const transferUsd = Number.isFinite(parsedTransferAmount)
+      ? parsedTransferAmount
+      : 0;
+    const baselineGains = profile?.gains ?? 0;
+    const gmToDeduct = transferUsd / USD_PER_GM;
+    const expectedGains = Math.max(
+      0,
+      Number((baselineGains - gmToDeduct).toFixed(2)),
+    );
+
+    if (!hasValidTransferAmount || !coinbaseFormReady) {
+      setTransferSubmitErr("Enter a valid withdrawal amount and address.");
+      return;
+    }
+
+    setTransferSubmitting(true);
+    setTransferSubmitErr(null);
+
+    try {
+      const result = await playerApi.createCoinbasePayout({
+        amount: transferUsd,
+        asset: coinbaseAsset,
+        address: coinbaseAddress.trim(),
+      });
+
+      const transferTx: TransactionItem = {
+        id: String(result?.redemptionId || `coinbase-payout-${Date.now()}`),
+        label: "Withdrawal Submitted",
+        source: `Coinbase (${coinbaseAsset})`,
+        amountLabel: `-$${transferUsd.toFixed(2)}`,
+        kind: "neg",
+      };
+
+      setProfile((prev) => {
+        if (!prev) return prev;
+        const nextGains = Math.max(0, prev.gains - gmToDeduct);
+        return {
+          ...prev,
+          gains: Number(nextGains.toFixed(2)),
+        };
+      });
+
+      setTransactions((prev) => [transferTx, ...prev]);
+      setTransferMethod("coinbase");
+      setTransferStage("success");
+      void safeSyncProfileAfterMutation(expectedGains);
+    } catch (e: unknown) {
+      setTransferSubmitErr(
+        e instanceof Error ? e.message : "Crypto withdrawal submission failed",
+      );
     } finally {
       setTransferSubmitting(false);
     }
@@ -1983,9 +2314,8 @@ export default function BetBurn() {
                             }
 
                             if (selectedPayoutMethod === "coinbase") {
-                              setTransferSubmitErr(
-                                "Coinbase payout integration is coming soon.",
-                              );
+                              setTransferMethod("coinbase");
+                              setTransferStage("details");
                             }
                           }}
                         >
@@ -2112,6 +2442,136 @@ export default function BetBurn() {
                             onClick={() => setTransferStage("verify")}
                           >
                             Next
+                          </button>
+                        </div>
+                      </div>
+                    ) : transferMethod === "coinbase" ? (
+                      <div style={bankDetailsPanel}>
+                        <div style={bankDetailsTitle}>Withdraw as Crypto</div>
+
+                        <div style={bankDetailsSubtitle}>
+                          Send your balance to an external wallet address.
+                        </div>
+
+                        <div style={bankDetailsForm}>
+                          <div style={bankDetailsField}>
+                            <span style={bankDetailsLabel}>Asset</span>
+
+                            <div style={cryptoAssetRow}>
+                              {(["BTC", "ETH", "SOL"] as CoinbaseAsset[]).map(
+                                (asset) => (
+                                  <button
+                                    key={asset}
+                                    type="button"
+                                    style={{
+                                      ...cryptoAssetButton,
+                                      borderColor:
+                                        coinbaseAsset === asset
+                                          ? "#FFBD17"
+                                          : "#C7C7C7",
+                                      background:
+                                        coinbaseAsset === asset
+                                          ? "#FFF8E6"
+                                          : "#FFFFFF",
+                                      color:
+                                        coinbaseAsset === asset
+                                          ? "#111111"
+                                          : "#666666",
+                                    }}
+                                    onClick={() => setCoinbaseAsset(asset)}
+                                  >
+                                    {asset}
+                                  </button>
+                                ),
+                              )}
+                            </div>
+                          </div>
+
+                          <label style={bankDetailsField}>
+                            <span style={bankDetailsLabel}>
+                              {coinbaseAsset} Wallet Address
+                            </span>
+
+                            <input
+                              type="text"
+                              spellCheck={false}
+                              autoComplete="off"
+                              style={bankDetailsInput}
+                              value={coinbaseAddress}
+                              onChange={(event) =>
+                                setCoinbaseAddress(event.target.value)
+                              }
+                            />
+                          </label>
+                        </div>
+
+                        {coinbasePayoutQuote && (
+                          <CryptoFeeBreakdown
+                            dark={false}
+                            rows={[
+                              {
+                                label: "Withdrawing",
+                                value: `$${coinbasePayoutQuote.grossAmount.toFixed(2)}`,
+                              },
+                              {
+                                label: `Crypto payout fee (${coinbasePayoutQuote.feePercent}%)`,
+                                value: `-$${coinbasePayoutQuote.feeAmount.toFixed(2)}`,
+                                negative: true,
+                              },
+                            ]}
+                            totalLabel="You receive"
+                            totalValue={`$${coinbasePayoutQuote.netAmount.toFixed(2)}`}
+                            footRows={
+                              typeof coinbasePayoutQuote.assetAmount === "number"
+                                ? [
+                                    {
+                                      label: `Approx. ${coinbaseAsset}`,
+                                      value:
+                                        coinbasePayoutQuote.assetAmount.toFixed(
+                                          8,
+                                        ),
+                                    },
+                                  ]
+                                : []
+                            }
+                          />
+                        )}
+
+                        {transferSubmitErr && (
+                          <div style={payoutMethodError}>
+                            {transferSubmitErr}
+                          </div>
+                        )}
+
+                        <div style={bankDetailsActions}>
+                          <button
+                            type="button"
+                            style={bankDetailsBackButton}
+                            onClick={() => {
+                              setTransferSubmitErr(null);
+                              setTransferStage("method");
+                            }}
+                          >
+                            Back
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={!coinbaseFormReady || transferSubmitting}
+                            style={{
+                              ...bankDetailsNextButton,
+                              opacity:
+                                coinbaseFormReady && !transferSubmitting
+                                  ? 1
+                                  : 0.5,
+                              cursor:
+                                coinbaseFormReady && !transferSubmitting
+                                  ? "pointer"
+                                  : "not-allowed",
+                            }}
+                            onClick={() => void prepareCoinbasePayout()}
+                          >
+                            {transferSubmitting ? "Quoting..." : "Next"}
                           </button>
                         </div>
                       </div>
@@ -2329,13 +2789,17 @@ export default function BetBurn() {
                       <div style={addCashConfirmTitle}>
                         {transferMethod === "stripe"
                           ? "Confirm Stripe Withdrawal"
-                          : "Confirm"}
+                          : transferMethod === "coinbase"
+                            ? "Confirm Crypto Withdrawal"
+                            : "Confirm"}
                       </div>
 
                       <div style={addCashConfirmAmount}>
                         {transferMethod === "stripe"
                           ? stripePayoutNetLabel
-                          : transferAmountLabel}{" "}
+                          : transferMethod === "coinbase"
+                            ? coinbasePayoutNetLabel
+                            : transferAmountLabel}{" "}
                         USD
                       </div>
 
@@ -2347,7 +2811,9 @@ export default function BetBurn() {
                               ? "Bank Account"
                               : transferMethod === "stripe"
                                 ? "Stripe connected account"
-                                : "PayPal"}
+                                : transferMethod === "coinbase"
+                                  ? `${coinbaseAsset} wallet`
+                                  : "PayPal"}
                           </span>
                         </div>
 
@@ -2359,8 +2825,16 @@ export default function BetBurn() {
                         {transferMethod !== "stripe" && (
                           <div style={addCashConfirmRow}>
                             <span style={addCashConfirmLabel}>Destination:</span>
-                            <span style={addCashConfirmValue}>
-                              {withdrawalEmail}
+                            <span
+                              style={
+                                transferMethod === "coinbase"
+                                  ? addCashConfirmAddressValue
+                                  : addCashConfirmValue
+                              }
+                            >
+                              {transferMethod === "coinbase"
+                                ? coinbaseAddress.trim()
+                                : withdrawalEmail}
                             </span>
                           </div>
                         )}
@@ -2372,7 +2846,9 @@ export default function BetBurn() {
                           <span style={addCashConfirmValue}>
                             {transferMethod === "stripe"
                               ? "Stripe payout schedule applies"
-                              : "1–3 business days"}
+                              : transferMethod === "coinbase"
+                                ? "After network confirmation"
+                                : "1–3 business days"}
                           </span>
                         </div>
 
@@ -2382,10 +2858,13 @@ export default function BetBurn() {
                               ? "PayPal Fee:"
                               : transferMethod === "stripe"
                                 ? "Wallet deduction:"
-                                : "Fee:"}
+                                : transferMethod === "coinbase"
+                                  ? "Wallet deduction:"
+                                  : "Fee:"}
                           </span>
                           <span style={addCashConfirmValue}>
-                            {transferMethod === "stripe"
+                            {transferMethod === "stripe" ||
+                            transferMethod === "coinbase"
                               ? transferAmountLabel
                               : withdrawalFeeLabel}
                           </span>
@@ -2402,18 +2881,47 @@ export default function BetBurn() {
                           </div>
                         )}
 
+                        {transferMethod === "coinbase" && (
+                          <div style={addCashConfirmRow}>
+                            <span style={addCashConfirmLabel}>
+                              Crypto payout fee (
+                              {coinbasePayoutQuote?.feePercent ?? 0}%):
+                            </span>
+                            <span style={addCashConfirmValue}>
+                              -{coinbasePayoutFeeLabel}
+                            </span>
+                          </div>
+                        )}
+
+                        {transferMethod === "coinbase" &&
+                          typeof coinbasePayoutQuote?.assetAmount ===
+                            "number" && (
+                            <div style={addCashConfirmRow}>
+                              <span style={addCashConfirmLabel}>
+                                Approx. {coinbaseAsset}:
+                              </span>
+                              <span style={addCashConfirmValue}>
+                                {coinbasePayoutQuote.assetAmount.toFixed(8)}
+                              </span>
+                            </div>
+                          )}
+
                         <div style={addCashConfirmRow}>
                           <span style={addCashConfirmLabel}>
                             {transferMethod === "paypal"
                               ? "You Will Receive:"
                               : transferMethod === "stripe"
                                 ? "Winner receives:"
-                                : "Total:"}
+                                : transferMethod === "coinbase"
+                                  ? "You Will Receive:"
+                                  : "Total:"}
                           </span>
                           <span style={addCashConfirmValue}>
                             {transferMethod === "stripe"
                               ? stripePayoutNetLabel
-                              : withdrawalTotalLabel}
+                              : transferMethod === "coinbase"
+                                ? coinbasePayoutNetLabel
+                                : withdrawalTotalLabel}
                           </span>
                         </div>
                       </div>
@@ -2430,7 +2938,9 @@ export default function BetBurn() {
                         onClick={() =>
                           void (transferMethod === "stripe"
                             ? submitStripePayout()
-                            : submitTransfer())
+                            : transferMethod === "coinbase"
+                              ? submitCoinbasePayout()
+                              : submitTransfer())
                         }
                         disabled={transferSubmitting}
                       >
@@ -2442,9 +2952,7 @@ export default function BetBurn() {
                         style={addCashConfirmBackButton}
                         onClick={() =>
                           setTransferStage(
-                            transferMethod === "stripe"
-                              ? "method"
-                              : "details",
+                            transferMethod === "stripe" ? "method" : "details",
                           )
                         }
                         disabled={transferSubmitting}
@@ -2704,9 +3212,34 @@ export default function BetBurn() {
                           <SiCoinbase size={25} color="#4D7CFE" />
                         </span>
                         <span style={addCashMethodLabel}>Coinbase</span>
-                        <span style={addCashComingSoon}>Coming soon</span>
+                        <span style={addCashMethodHint}>BTC · ETH · SOL</span>
                       </button>
                     </div>
+
+                    {addCashMethod === "coinbase" && coinbaseDepositQuote && (
+                      <CryptoFeeBreakdown
+                        dark
+                        rows={[
+                          {
+                            label: "You pay",
+                            value: `$${coinbaseDepositQuote.grossAmount.toFixed(2)}`,
+                          },
+                          {
+                            label: `Crypto deposit fee (${coinbaseDepositQuote.feePercent}%)`,
+                            value: `-$${coinbaseDepositQuote.feeAmount.toFixed(2)}`,
+                            negative: true,
+                          },
+                        ]}
+                        totalLabel="Credited to wallet"
+                        totalValue={`$${coinbaseDepositQuote.netAmount.toFixed(2)}`}
+                        footRows={[
+                          {
+                            label: "You receive",
+                            value: `${coinbaseDepositQuote.gains.toLocaleString()} GM`,
+                          },
+                        ]}
+                      />
+                    )}
 
                     {addCashErr && <div style={addCashError}>{addCashErr}</div>}
 
@@ -2719,7 +3252,7 @@ export default function BetBurn() {
                           ? startStripeAddCashFlow
                           : addCashMethod === "paypal"
                             ? startPayPalAddCashFlow
-                            : startCoinbaseComingSoon
+                            : startCoinbaseAddCashFlow
                       }
                       disabled={addCashLoading}
                     >
@@ -2793,6 +3326,91 @@ export default function BetBurn() {
                         setAddCashStage("confirm");
                       }}
                     />
+                  </div>
+                )}
+
+                {addCashStage === "coinbase-checkout" && coinbaseCharge && (
+                  <div style={addCashConfirmScene}>
+                    <div style={addCashConfirmPanel}>
+                      <div style={addCashConfirmTitle}>Pay with crypto</div>
+
+                      <div style={addCashConfirmAmount}>
+                        ${coinbaseCharge.grossAmount.toFixed(2)} USD
+                      </div>
+
+                      <div style={addCashConfirmDetails}>
+                        <div style={addCashConfirmRow}>
+                          <span style={addCashConfirmLabel}>Accepted:</span>
+                          <span style={addCashConfirmValue}>
+                            {coinbaseCharge.supportedAssets.join(" · ")}
+                          </span>
+                        </div>
+
+                        <div style={addCashConfirmRow}>
+                          <span style={addCashConfirmLabel}>
+                            Deposit fee ({coinbaseCharge.feePercent}%):
+                          </span>
+                          <span style={addCashConfirmValue}>
+                            -${coinbaseCharge.feeAmount.toFixed(2)}
+                          </span>
+                        </div>
+
+                        <div style={addCashConfirmRow}>
+                          <span style={addCashConfirmLabel}>
+                            Credited to wallet:
+                          </span>
+                          <span style={addCashConfirmValue}>
+                            ${coinbaseCharge.netAmount.toFixed(2)}
+                          </span>
+                        </div>
+
+                        <div style={addCashConfirmRow}>
+                          <span style={addCashConfirmLabel}>You receive:</span>
+                          <span style={addCashConfirmValue}>
+                            {coinbaseCharge.gains.toLocaleString()} GM
+                          </span>
+                        </div>
+
+                        <div style={addCashConfirmRow}>
+                          <span style={addCashConfirmLabel}>
+                            Funds will arrive:
+                          </span>
+                          <span style={addCashConfirmValue}>
+                            After network confirmation
+                          </span>
+                        </div>
+                      </div>
+
+                      <div style={cryptoCheckoutNote}>
+                        Your wallet is credited once the payment confirms
+                        on-chain. This can take a few minutes.
+                      </div>
+
+                      {addCashErr && (
+                        <div style={addCashConfirmError}>{addCashErr}</div>
+                      )}
+
+                      <a
+                        style={addCashConfirmPrimaryButton}
+                        href={coinbaseCharge.hostedUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Continue to Coinbase
+                      </a>
+
+                      <button
+                        style={addCashConfirmBackButton}
+                        type="button"
+                        onClick={() => {
+                          setAddCashErr(null);
+                          setCoinbaseCharge(null);
+                          setAddCashStage("entry");
+                        }}
+                      >
+                        Back
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -3396,11 +4014,90 @@ const addCashMethodLabel: React.CSSProperties = {
   minWidth: 0,
 };
 
-const addCashComingSoon: React.CSSProperties = {
+const addCashMethodHint: React.CSSProperties = {
   color: "rgba(255,255,255,0.72)",
-  fontSize: 12,
+  fontSize: 11,
   fontWeight: 600,
+  letterSpacing: 0.4,
   whiteSpace: "nowrap",
+};
+
+const cryptoFeePanel: React.CSSProperties = {
+  width: "100%",
+  marginTop: 14,
+  padding: "12px 14px",
+  borderRadius: 10,
+  display: "flex",
+  flexDirection: "column",
+  gap: 8,
+  boxSizing: "border-box",
+};
+
+const cryptoFeeRow: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 12,
+};
+
+const cryptoFeeLabel: React.CSSProperties = {
+  fontSize: 13,
+  fontWeight: 400,
+  opacity: 0.78,
+  textAlign: "left",
+};
+
+const cryptoFeeValue: React.CSSProperties = {
+  fontSize: 13,
+  fontWeight: 600,
+  textAlign: "right",
+  whiteSpace: "nowrap",
+};
+
+const cryptoFeeDivider: React.CSSProperties = {
+  height: 1,
+  width: "100%",
+};
+
+const cryptoFeeTotalLabel: React.CSSProperties = {
+  fontSize: 14,
+  fontWeight: 600,
+  textAlign: "left",
+};
+
+const cryptoFeeTotalValue: React.CSSProperties = {
+  fontSize: 15,
+  fontWeight: 700,
+  textAlign: "right",
+  whiteSpace: "nowrap",
+};
+
+const cryptoAssetRow: React.CSSProperties = {
+  display: "flex",
+  gap: 8,
+};
+
+const cryptoAssetButton: React.CSSProperties = {
+  flex: 1,
+  height: 38,
+  borderRadius: 6,
+  // split out instead of the border shorthand - the selected asset overrides
+  // borderColor and react warns if you mix the two
+  borderWidth: 2,
+  borderStyle: "solid",
+  borderColor: "#C7C7C7",
+  background: "#FFFFFF",
+  fontSize: 13,
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+const cryptoCheckoutNote: React.CSSProperties = {
+  marginTop: 14,
+  color: "#777777",
+  fontSize: 13,
+  lineHeight: 1.45,
+  textAlign: "left",
 };
 
 const addCashContinueButton: React.CSSProperties = {
@@ -4420,6 +5117,15 @@ const addCashConfirmValue: React.CSSProperties = {
   fontSize: 15,
   fontWeight: 500,
   textAlign: "right",
+};
+
+// addresses are long with nowhere to break, so let them wrap instead of
+// stretching the panel
+const addCashConfirmAddressValue: React.CSSProperties = {
+  ...addCashConfirmValue,
+  fontSize: 12,
+  maxWidth: "62%",
+  overflowWrap: "anywhere",
 };
 
 const addCashConfirmPrimaryButton: React.CSSProperties = {

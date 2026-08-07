@@ -10,6 +10,39 @@ export type StripePayoutQuote = {
   fixedFeeCents: number;
 };
 
+export type CoinbaseAsset = "BTC" | "ETH" | "SOL";
+
+export type CoinbaseDepositQuote = {
+  grossAmount: number;
+  feeAmount: number;
+  netAmount: number;
+  feePercent: number;
+  // gains credited on the net amount, after the fee
+  gains: number;
+  currency: string;
+};
+
+export type CoinbasePayoutQuote = {
+  grossAmount: number;
+  feeAmount: number;
+  netAmount: number;
+  feePercent: number;
+  currency: string;
+  // only set if an asset was passed with the quote request
+  asset?: CoinbaseAsset;
+  assetAmount?: number;
+  unitPriceUsd?: number;
+};
+
+export type CoinbaseCharge = {
+  depositId: string;
+  chargeId: string;
+  chargeCode: string;
+  hostedUrl: string;
+  expiresAt: string;
+  supportedAssets: CoinbaseAsset[];
+} & CoinbaseDepositQuote;
+
 const MOCK_PROFILE = {
   id: "ea24471a-559f-44b5-8fea-4b6491f9f4ea",
   gains: 80000,
@@ -33,6 +66,30 @@ const MOCK_REDEMPTIONS = [
     requestedAt: new Date(Date.now() - 86400000).toISOString(),
   },
 ];
+
+const COINBASE_MOCK_DEPOSIT_FEE = 2;
+const COINBASE_MOCK_PAYOUT_FEE = 4;
+const GAINS_PER_USD = 100;
+
+// same rounding as the backend (fee rounds up to the cent) so mock mode
+// doesn't show different numbers than the real API
+const mockCoinbaseQuote = (
+  amountUsd: number,
+  feePercent: number,
+): CoinbaseDepositQuote => {
+  const grossAmount = Math.round(amountUsd * 100) / 100;
+  const feeAmount = Math.ceil(grossAmount * (feePercent / 100) * 100) / 100;
+  const netAmount = Math.round((grossAmount - feeAmount) * 100) / 100;
+
+  return {
+    grossAmount,
+    feeAmount,
+    netAmount,
+    feePercent,
+    gains: netAmount * GAINS_PER_USD,
+    currency: "USD",
+  };
+};
 
 class PlayerApiService {
   private baseUrl: string;
@@ -85,6 +142,14 @@ class PlayerApiService {
 
     if (contentType.includes("application/json")) {
       return JSON.parse(text);
+    }
+
+    // non-JSON usually means express' default HTML error page - don't dump
+    // that into the UI, just use the status line
+    if (contentType.includes("text/html") || text.trimStart().startsWith("<")) {
+      return {
+        message: `${response.status} ${response.statusText}`.trim(),
+      };
     }
 
     return { message: text };
@@ -172,10 +237,6 @@ class PlayerApiService {
       };
     }
 
-    if (!this.profileId) {
-      throw new Error("Missing profileId");
-    }
-
     const query = new URLSearchParams();
 
     if (typeof params.limit === "number") {
@@ -188,13 +249,10 @@ class PlayerApiService {
 
     const suffix = query.toString() ? `?${query.toString()}` : "";
 
-    const r = await fetch(
-      `${this.baseUrl}/api/v2/paypal/deposits/${this.profileId}${suffix}`,
-      {
-        method: "GET",
-        headers: this.headers(),
-      },
-    );
+    const r = await fetch(`${this.baseUrl}/api/v2/deposits/my${suffix}`, {
+      method: "GET",
+      headers: this.headers(),
+    });
 
     const data = await this.readResponse(r);
 
@@ -435,6 +493,150 @@ class PlayerApiService {
       );
     }
     return data as StripePayoutQuote;
+  }
+
+  async getCoinbaseAssets(): Promise<{ assets: CoinbaseAsset[] }> {
+    if (USE_MOCK_API) {
+      return { assets: ["BTC", "ETH", "SOL"] };
+    }
+
+    const r = await fetch(`${this.baseUrl}/api/v2/coinbase/assets`, {
+      method: "GET",
+      headers: this.headers(),
+    });
+
+    const data = await this.readResponse(r);
+    if (!r.ok) {
+      throw new Error(
+        data?.message || data?.error || "Failed to load Coinbase assets",
+      );
+    }
+    return data as { assets: CoinbaseAsset[] };
+  }
+
+  async getCoinbaseDepositQuote(params: {
+    amountUsd: number;
+  }): Promise<CoinbaseDepositQuote> {
+    if (USE_MOCK_API) {
+      return mockCoinbaseQuote(params.amountUsd, COINBASE_MOCK_DEPOSIT_FEE);
+    }
+
+    const query = new URLSearchParams({ amountUsd: String(params.amountUsd) });
+    const r = await fetch(
+      `${this.baseUrl}/api/v2/coinbase/deposit/quote?${query}`,
+      {
+        method: "GET",
+        headers: this.headers(),
+      },
+    );
+
+    const data = await this.readResponse(r);
+    if (!r.ok) {
+      throw new Error(
+        data?.message || data?.error || "Failed to quote crypto deposit",
+      );
+    }
+    return data as CoinbaseDepositQuote;
+  }
+
+  async getCoinbasePayoutQuote(params: {
+    amountUsd: number;
+    asset?: CoinbaseAsset;
+  }): Promise<CoinbasePayoutQuote> {
+    if (USE_MOCK_API) {
+      return mockCoinbaseQuote(params.amountUsd, COINBASE_MOCK_PAYOUT_FEE);
+    }
+
+    const query = new URLSearchParams({ amountUsd: String(params.amountUsd) });
+    if (params.asset) query.set("asset", params.asset);
+
+    const r = await fetch(
+      `${this.baseUrl}/api/v2/coinbase/payout/quote?${query}`,
+      {
+        method: "GET",
+        headers: this.headers(),
+      },
+    );
+
+    const data = await this.readResponse(r);
+    if (!r.ok) {
+      throw new Error(
+        data?.message || data?.error || "Failed to quote crypto payout",
+      );
+    }
+    return data as CoinbasePayoutQuote;
+  }
+
+  async createCoinbaseCharge(params: {
+    amountUsd: number;
+  }): Promise<CoinbaseCharge> {
+    if (USE_MOCK_API) {
+      const quote = mockCoinbaseQuote(
+        params.amountUsd,
+        COINBASE_MOCK_DEPOSIT_FEE,
+      );
+
+      return {
+        ...quote,
+        depositId: `mock-deposit-${Date.now()}`,
+        chargeId: `mock-charge-${Date.now()}`,
+        chargeCode: "MOCKCODE",
+        hostedUrl: "https://commerce.coinbase.com/charges/MOCKCODE",
+        expiresAt: new Date(Date.now() + 3600000).toISOString(),
+        supportedAssets: ["BTC", "ETH", "SOL"],
+      } as CoinbaseCharge;
+    }
+
+    const r = await fetch(`${this.baseUrl}/api/v2/coinbase/charges`, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({ amountUsd: params.amountUsd }),
+    });
+
+    const data = await this.readResponse(r);
+    if (!r.ok) {
+      throw new Error(
+        data?.message || data?.error || "Failed to create crypto deposit",
+      );
+    }
+    return data as CoinbaseCharge;
+  }
+
+  async createCoinbasePayout(params: {
+    amount: number;
+    asset: CoinbaseAsset;
+    address: string;
+  }) {
+    if (USE_MOCK_API) {
+      const quote = mockCoinbaseQuote(params.amount, COINBASE_MOCK_PAYOUT_FEE);
+
+      return {
+        ...quote,
+        redemptionId: `mock-coinbase-payout-${Date.now()}`,
+        status: "completed",
+        asset: params.asset,
+        assetAmount: 0,
+        transactionHash: null,
+      };
+    }
+
+    const r = await fetch(`${this.baseUrl}/api/v2/coinbase/payouts`, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({
+        amount: params.amount,
+        asset: params.asset,
+        address: params.address,
+      }),
+    });
+
+    const data = await this.readResponse(r);
+    if (!r.ok) {
+      throw new Error(
+        data?.message || data?.error || "Crypto withdrawal failed",
+      );
+    }
+    return data;
   }
 
   async getConnectStatus(): Promise<{
