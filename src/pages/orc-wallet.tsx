@@ -138,10 +138,14 @@ const TAB_LABELS: Record<TabKey, string> = {
 const toErrorMessage = (reason: unknown, fallback: string) =>
   reason instanceof Error && reason.message ? reason.message : fallback;
 
+// stripe writes "succeeded", deposit_transactions writes "completed" - both
+// mean the money landed
+const DEPOSIT_SETTLED = ["succeeded", "completed"];
+
 // pending deposits aren't credited yet, so show the status instead of
 // making it look like the cash already landed
 const depositLabel = (status?: string) =>
-  !status || status.toLowerCase() === "succeeded"
+  !status || DEPOSIT_SETTLED.includes(status.toLowerCase())
     ? "Cash Added"
     : `Cash Added (${status.toUpperCase()})`;
 
