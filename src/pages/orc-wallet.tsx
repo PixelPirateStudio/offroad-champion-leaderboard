@@ -13,12 +13,7 @@ import {
 } from "@/services/playerApi";
 import AddCashStripeFlow from "@/components/wallet/AddCashStripeFlow";
 import AddCashPayPalFlow from "@/components/wallet/AddCashPayPalFlow";
-import {
-  FaUniversity,
-  FaGlobeAmericas,
-  FaPaypal,
-  FaStripe,
-} from "react-icons/fa";
+import { FaUniversity, FaGlobeAmericas, FaPaypal } from "react-icons/fa";
 import { SiCashapp, SiCoinbase } from "react-icons/si";
 import { US } from "country-flag-icons/react/3x2";
 import countries from "i18n-iso-countries";
@@ -1004,7 +999,7 @@ export default function BetBurn() {
       setTransferStage("confirm");
     } catch (e: unknown) {
       setTransferSubmitErr(
-        e instanceof Error ? e.message : "Unable to prepare Stripe payout",
+        e instanceof Error ? e.message : "Unable to prepare the withdrawal",
       );
     } finally {
       setConnectLoading(false);
@@ -2216,29 +2211,6 @@ export default function BetBurn() {
                           type="button"
                           style={{
                             ...payoutMethodOption,
-                            ...(selectedPayoutMethod === "stripe"
-                              ? payoutMethodOptionSelected
-                              : {}),
-                          }}
-                          onClick={() => {
-                            setTransferSubmitErr(null);
-                            setSelectedPayoutMethod("stripe");
-                          }}
-                        >
-                          <span style={payoutIconSlot} aria-hidden="true">
-                            <FaStripe size={42} color="#635BFF" />
-                          </span>
-
-                          <span style={payoutLabelGroup}>
-                            <span style={payoutActionText}>Withdraw with</span>
-                            <strong style={payoutBrandText}>Stripe</strong>
-                          </span>
-                        </button>
-
-                        <button
-                          type="button"
-                          style={{
-                            ...payoutMethodOption,
                             ...(selectedPayoutMethod === "coinbase"
                               ? payoutMethodOptionSelected
                               : {}),
@@ -2295,21 +2267,18 @@ export default function BetBurn() {
                               : "not-allowed",
                           }}
                           onClick={() => {
+                            // Bank payouts run through Stripe Connect, so we
+                            // send them straight into the Stripe flow instead
+                            // of collecting account numbers ourselves.
                             if (selectedPayoutMethod === "bank") {
-                              setTransferMethod("bank");
-                              setTransferStage("details");
+                              setTransferMethod("stripe");
+                              void prepareStripePayout();
                               return;
                             }
 
                             if (selectedPayoutMethod === "paypal") {
                               setTransferMethod("paypal");
                               setTransferStage("details");
-                              return;
-                            }
-
-                            if (selectedPayoutMethod === "stripe") {
-                              setTransferMethod("stripe");
-                              void prepareStripePayout();
                               return;
                             }
 
@@ -2788,7 +2757,7 @@ export default function BetBurn() {
                     <div style={addCashConfirmPanel}>
                       <div style={addCashConfirmTitle}>
                         {transferMethod === "stripe"
-                          ? "Confirm Stripe Withdrawal"
+                          ? "Confirm Bank Withdrawal"
                           : transferMethod === "coinbase"
                             ? "Confirm Crypto Withdrawal"
                             : "Confirm"}
@@ -2807,13 +2776,12 @@ export default function BetBurn() {
                         <div style={addCashConfirmRow}>
                           <span style={addCashConfirmLabel}>To:</span>
                           <span style={addCashConfirmValue}>
-                            {transferMethod === "bank"
+                            {transferMethod === "bank" ||
+                            transferMethod === "stripe"
                               ? "Bank Account"
-                              : transferMethod === "stripe"
-                                ? "Stripe connected account"
-                                : transferMethod === "coinbase"
-                                  ? `${coinbaseAsset} wallet`
-                                  : "PayPal"}
+                              : transferMethod === "coinbase"
+                                ? `${coinbaseAsset} wallet`
+                                : "PayPal"}
                           </span>
                         </div>
 
@@ -2844,11 +2812,9 @@ export default function BetBurn() {
                             Funds will arrive:
                           </span>
                           <span style={addCashConfirmValue}>
-                            {transferMethod === "stripe"
-                              ? "Stripe payout schedule applies"
-                              : transferMethod === "coinbase"
-                                ? "After network confirmation"
-                                : "1–3 business days"}
+                            {transferMethod === "coinbase"
+                              ? "After network confirmation"
+                              : "1–3 business days"}
                           </span>
                         </div>
 
@@ -2873,7 +2839,7 @@ export default function BetBurn() {
                         {transferMethod === "stripe" && (
                           <div style={addCashConfirmRow}>
                             <span style={addCashConfirmLabel}>
-                              Stripe payout fee:
+                              Bank payout fee:
                             </span>
                             <span style={addCashConfirmValue}>
                               -{stripePayoutFeeLabel}
@@ -3027,7 +2993,7 @@ export default function BetBurn() {
                                     : "Savings"
                                 }: ••••${bankForm.accountNumber.slice(-4) || "----"}`
                               : transferMethod === "stripe"
-                                ? "Stripe connected account"
+                                ? "Bank Account"
                                 : payPalForm.paypalEmail}
                           </div>
                         </div>
