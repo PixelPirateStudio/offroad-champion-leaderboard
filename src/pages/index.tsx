@@ -1,11 +1,11 @@
 import Image from "next/image";
 import { Geist, Geist_Mono } from "next/font/google";
 import { RecentEvents } from "../components/v2/RecentEvents/RecentEvents";
-import { dummyEvents } from "../utils/types/events";
+import { TournamentEvent } from "../utils/types/events";
 import { Podium } from "../components/v2/AllTimeBest/Podium";
 import { TournamentLeaderboard } from "../components/v2/TournamentLeaderboard/TournamentLeaderboard";
 import { MergedEntry } from "../utils/types/leaderboard";
-import { tournamentApi, LeaderboardResponse } from "../services/tournamentApi";
+import { tournamentApi, LeaderboardResponse, TournamentSummaryResponse } from "../services/tournamentApi";
 import {
   transformLeaderboardResponse,
   generateLeaderboardId,
@@ -30,10 +30,14 @@ interface HomeProps {
   weeklyMultiEntries: MergedEntry[];
   monthlySingleEntries: MergedEntry[];
   monthlyMultiEntries: MergedEntry[];
+  recentEvents: TournamentEvent[];
   prizes: {
-    daily: string;
-    weekly: string;
-    monthly: string;
+    dailySP: string;
+    dailyMP: string;
+    weeklySP: string;
+    weeklyMP: string;
+    monthlySP: string;
+    monthlyMP: string;
   };
   tournamentDates: {
     dailySP: { startDate: string; endDate: string };
@@ -52,6 +56,7 @@ export default function Home({
   weeklyMultiEntries,
   monthlySingleEntries,
   monthlyMultiEntries,
+  recentEvents,
   prizes,
   tournamentDates,
 }: HomeProps) {
@@ -107,56 +112,14 @@ export default function Home({
       <main className="flex flex-col gap-4 md:gap-6 lg:gap-8 row-start-2 max-w-7xl w-full pt-4">
         {/* Top Section - Recent Events and Podium */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 lg:gap-8 items-stretch">
-          <RecentEvents events={dummyEvents} />
+          <RecentEvents events={recentEvents} />
           <Podium entries={dailySingleEntries} />
         </div>
 
         {/* Tournament Leaderboards - 2x3 Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-5 lg:gap-6">
-          {/* Single-Player Column */}
-          <div className="flex flex-col gap-4 md:gap-5 lg:gap-6">
-            <TournamentLeaderboard
-              title="Single-Player: Daily Tournament:"
-              date={dayjs(tournamentDates.dailySP.startDate).format("M/D/YYYY")}
-              type="Time Trials"
-              description="Best times today"
-              endedTime={getTimeStatus(tournamentDates.dailySP.endDate)}
-              memberCount={dailySingleEntries.length}
-              prize={prizes.daily}
-              entries={dailySingleEntries}
-              leaderboardId="daily"
-              backgroundColor="bg-black"
-            />
-
-            <TournamentLeaderboard
-              title="Single-Player: Weekly Tournament"
-              date={dayjs(tournamentDates.weeklySP.startDate).format("M/D/YYYY")}
-              type="Time Trials"
-              description="Best weeks times"
-              endedTime={getTimeStatus(tournamentDates.weeklySP.endDate)}
-              memberCount={weeklySingleEntries.length}
-              prize={prizes.weekly}
-              entries={weeklySingleEntries}
-              leaderboardId="weekly"
-              backgroundColor="bg-[#0A0520]"
-            />
-
-            <TournamentLeaderboard
-              title="Single-Player:  Monthly Tournament:"
-              date={dayjs(tournamentDates.monthlySP.startDate).format("M/D/YYYY")}
-              type="Time Trials"
-              description="Best months times"
-              endedTime={getTimeStatus(tournamentDates.monthlySP.endDate)}
-              memberCount={monthlySingleEntries.length}
-              prize={prizes.monthly}
-              entries={monthlySingleEntries}
-              leaderboardId="monthly"
-              backgroundColor="bg-black"
-            />
-          </div>
-
+        <div className="grid grid-cols-1 lg:grid-cols-2 lg:grid-rows-3 gap-4 md:gap-5 lg:gap-6">
           {/* Multi-Player Column */}
-          <div className="flex flex-col gap-4 md:gap-5 lg:gap-6">
+          <div className="flex flex-col gap-4 md:gap-5 lg:grid lg:grid-rows-subgrid lg:gap-0 lg:row-span-3 border-[3px] border-[#FC8B00] rounded-[10px] p-3">
             <TournamentLeaderboard
               title="Multi-Player: Daily Tournament:"
               date={dayjs(tournamentDates.dailyMP.startDate).format("M/D/YYYY")}
@@ -164,7 +127,7 @@ export default function Home({
               description="Best times today"
               endedTime={getTimeStatus(tournamentDates.dailyMP.endDate)}
               memberCount={dailyMultiEntries.length}
-              prize={prizes.daily}
+              prize={prizes.dailyMP}
               entries={dailyMultiEntries}
               leaderboardId="daily-multi"
               backgroundColor="bg-black"
@@ -177,7 +140,7 @@ export default function Home({
               description="Best weeks times"
               endedTime={getTimeStatus(tournamentDates.weeklyMP.endDate)}
               memberCount={weeklyMultiEntries.length}
-              prize={prizes.weekly}
+              prize={prizes.weeklyMP}
               entries={weeklyMultiEntries}
               leaderboardId="weekly-multi"
               backgroundColor="bg-[#0A0520]"
@@ -190,9 +153,51 @@ export default function Home({
               description="Best months times"
               endedTime={getTimeStatus(tournamentDates.monthlyMP.endDate)}
               memberCount={monthlyMultiEntries.length}
-              prize={prizes.monthly}
+              prize={prizes.monthlyMP}
               entries={monthlyMultiEntries}
               leaderboardId="monthly-multi"
+              backgroundColor="bg-black"
+            />
+          </div>
+
+          {/* Career Mode Column */}
+          <div className="flex flex-col gap-4 md:gap-5 lg:grid lg:grid-rows-subgrid lg:gap-0 lg:row-span-3 border-[3px] border-[#00FC03] rounded-[10px] p-3">
+            <TournamentLeaderboard
+              title="Career Mode: Daily Tournament:"
+              date={dayjs(tournamentDates.dailySP.startDate).format("M/D/YYYY")}
+              type="Time Trials"
+              description="Best times today"
+              endedTime={getTimeStatus(tournamentDates.dailySP.endDate)}
+              memberCount={dailySingleEntries.length}
+              prize={prizes.dailySP}
+              entries={dailySingleEntries}
+              leaderboardId="daily"
+              backgroundColor="bg-black"
+            />
+
+            <TournamentLeaderboard
+              title="Career Mode: Weekly Tournament"
+              date={dayjs(tournamentDates.weeklySP.startDate).format("M/D/YYYY")}
+              type="Time Trials"
+              description="Best weeks times"
+              endedTime={getTimeStatus(tournamentDates.weeklySP.endDate)}
+              memberCount={weeklySingleEntries.length}
+              prize={prizes.weeklySP}
+              entries={weeklySingleEntries}
+              leaderboardId="weekly"
+              backgroundColor="bg-[#0A0520]"
+            />
+
+            <TournamentLeaderboard
+              title="Career Mode: Monthly Tournament:"
+              date={dayjs(tournamentDates.monthlySP.startDate).format("M/D/YYYY")}
+              type="Time Trials"
+              description="Best months times"
+              endedTime={getTimeStatus(tournamentDates.monthlySP.endDate)}
+              memberCount={monthlySingleEntries.length}
+              prize={prizes.monthlySP}
+              entries={monthlySingleEntries}
+              leaderboardId="monthly"
               backgroundColor="bg-black"
             />
           </div>
@@ -251,7 +256,7 @@ export default function Home({
 
 export const getServerSideProps = async () => {
   try {
-    // Fetch prizes and all 6 leaderboards in parallel
+    // Fetch prizes, all 6 leaderboards, and recent winners in parallel
     const [
       prizes,
       dailySPResponse,
@@ -260,6 +265,7 @@ export const getServerSideProps = async () => {
       weeklyMPResponse,
       monthlySPResponse,
       monthlyMPResponse,
+      summaryResponse,
     ] = await Promise.all([
       tournamentApi.getPrizes(),
       tournamentApi.getLeaderboard({
@@ -292,6 +298,7 @@ export const getServerSideProps = async () => {
         mode: "multiplayer",
         limit: 100,
       }),
+      tournamentApi.getTournamentSummary({ includeWinners: true }),
     ]);
 
     // Transform all responses
@@ -340,6 +347,24 @@ export const getServerSideProps = async () => {
           return a.fastestTime - b.fastestTime;
         });
     };
+    const usernameToCountry: Record<string, string> = {};
+    [dailySPResponse, dailyMPResponse, weeklySPResponse, weeklyMPResponse, monthlySPResponse, monthlyMPResponse]
+      .flatMap((r) => (r as LeaderboardResponse).leaderboard ?? [])
+      .forEach((entry) => { if (entry.country) usernameToCountry[entry.username] = entry.country; });
+
+    const recentWinners = (summaryResponse as TournamentSummaryResponse).recentWinners ?? [];
+    const recentEvents: TournamentEvent[] = recentWinners.filter((w) => w.period === "daily" && w.mode === "multiplayer").slice(0, 2).map((winner) => ({
+      id: `${winner.mode}-${winner.period}-${winner.startDate}`,
+      name: `${winner.mode === "multiplayer" ? "Multiplayer" : "Career Mode"} ${winner.period.charAt(0).toUpperCase() + winner.period.slice(1)} Tournament`,
+      startDate: winner.startDate,
+      endDate: winner.endDate,
+      winningUserId: winner.winnerUsername,
+      winnerCountry: usernameToCountry[winner.winnerUsername],
+      iconURL: "logo.png",
+      prizeType: "cash",
+      prizeAmount: parseFloat(winner.prizeAmount),
+    }));
+
     console.log("Leaderboard data fetched and transformed successfully.",weeklySPData.entries);
 
     const dailySPApi = dailySPResponse as LeaderboardResponse;
@@ -358,9 +383,12 @@ export const getServerSideProps = async () => {
         monthlySingleEntries: sortByFastestTime(monthlySPData.entries),
         monthlyMultiEntries: sortByFastestTime(monthlyMPData.entries),
         prizes: {
-          daily: formatPrize(prizes.daily.singleplayer.first),
-          weekly: formatPrize(prizes.weekly.singleplayer.first),
-          monthly: formatPrize(prizes.monthly.singleplayer.first),
+          dailySP: "",
+          dailyMP: formatPrize(prizes.daily.multiplayer.first),
+          weeklySP: prizes.weekly.singleplayer.first.toFixed(2),
+          weeklyMP: formatPrize(prizes.weekly.multiplayer.first),
+          monthlySP: prizes.monthly.singleplayer.first.toFixed(2),
+          monthlyMP: formatPrize(prizes.monthly.multiplayer.first),
         },
         tournamentDates: {
           dailySP: { startDate: dailySPApi.tournament.startDate, endDate: dailySPApi.tournament.endDate },
@@ -370,14 +398,14 @@ export const getServerSideProps = async () => {
           monthlySP: { startDate: monthlySPApi.tournament.startDate, endDate: monthlySPApi.tournament.endDate },
           monthlyMP: { startDate: monthlyMPApi.tournament.startDate, endDate: monthlyMPApi.tournament.endDate },
         },
+        recentEvents,
       },
     };
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Failed to fetch leaderboard data:", error);
 
     const now = new Date().toISOString();
 
-    // Return empty arrays on error
     return {
       props: {
         dailySingleEntries: [],
@@ -387,9 +415,12 @@ export const getServerSideProps = async () => {
         monthlySingleEntries: [],
         monthlyMultiEntries: [],
         prizes: {
-          daily: "$5.00",
-          weekly: "$25.00",
-          monthly: "$300.00",
+          dailySP: "",
+          dailyMP: "$5.00",
+          weeklySP: "0.00",
+          weeklyMP: "$6.00",
+          monthlySP: "0.00",
+          monthlyMP: "$5.00",
         },
         tournamentDates: {
           dailySP: { startDate: now, endDate: now },
@@ -399,6 +430,7 @@ export const getServerSideProps = async () => {
           monthlySP: { startDate: now, endDate: now },
           monthlyMP: { startDate: now, endDate: now },
         },
+        recentEvents: [],
       },
     };
   }

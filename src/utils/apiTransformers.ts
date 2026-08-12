@@ -26,7 +26,7 @@ export function transformTournamentToLeaderboard(
   const { tournament } = response;
 
   // Generate a user-friendly name from period and mode
-  const modeName = tournament.mode === "singleplayer" ? "Single-Player" : "Multi-Player";
+  const modeName = tournament.mode === "singleplayer" ? "Career Mode" : "Multi-Player";
   const periodName =
     tournament.period.charAt(0).toUpperCase() + tournament.period.slice(1);
   const name = `${modeName} ${periodName} Tournament`;

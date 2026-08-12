@@ -135,6 +135,16 @@ export const userDictionary: Record<string, PublicUser> = {
         username: "liam_van_berg",
         countryCode: "NL",
         name: "Liam van Berg"
+    },
+    "todd_1298": {
+        id: "todd_1298",
+        username: "Todd_1298",
+        name: "Todd_1298"
+    },
+    "innan_02": {
+        id: "innan_02",
+        username: "Innan_02",
+        name: "Innan_02"
     }
 };
 
