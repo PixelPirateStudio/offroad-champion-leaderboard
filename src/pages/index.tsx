@@ -11,6 +11,7 @@ import {
   generateLeaderboardId,
   formatPrize,
 } from "../utils/apiTransformers";
+import { formatTournamentDate } from "../utils/dateUtils";
 import dayjs from "dayjs";
 
 const geistSans = Geist({
@@ -117,7 +118,7 @@ export default function Home({
           <div className="flex flex-col gap-4 md:gap-5 lg:gap-6">
             <TournamentLeaderboard
               title="Single-Player: Daily Tournament:"
-              date={dayjs(tournamentDates.dailySP.startDate).format("M/D/YYYY")}
+              date={formatTournamentDate(tournamentDates.dailySP.startDate)}
               type="Time Trials"
               description="Best times today"
               endedTime={getTimeStatus(tournamentDates.dailySP.endDate)}
@@ -130,7 +131,7 @@ export default function Home({
 
             <TournamentLeaderboard
               title="Single-Player: Weekly Tournament"
-              date={dayjs(tournamentDates.weeklySP.startDate).format("M/D/YYYY")}
+              date={formatTournamentDate(tournamentDates.weeklySP.startDate)}
               type="Time Trials"
               description="Best weeks times"
               endedTime={getTimeStatus(tournamentDates.weeklySP.endDate)}
@@ -143,7 +144,7 @@ export default function Home({
 
             <TournamentLeaderboard
               title="Single-Player:  Monthly Tournament:"
-              date={dayjs(tournamentDates.monthlySP.startDate).format("M/D/YYYY")}
+              date={formatTournamentDate(tournamentDates.monthlySP.startDate)}
               type="Time Trials"
               description="Best months times"
               endedTime={getTimeStatus(tournamentDates.monthlySP.endDate)}
@@ -159,7 +160,7 @@ export default function Home({
           <div className="flex flex-col gap-4 md:gap-5 lg:gap-6">
             <TournamentLeaderboard
               title="Multi-Player: Daily Tournament:"
-              date={dayjs(tournamentDates.dailyMP.startDate).format("M/D/YYYY")}
+              date={formatTournamentDate(tournamentDates.dailyMP.startDate)}
               type="Time Trials"
               description="Best times today"
               endedTime={getTimeStatus(tournamentDates.dailyMP.endDate)}
@@ -172,7 +173,7 @@ export default function Home({
 
             <TournamentLeaderboard
               title="Multi-Player: Weekly Tournament:"
-              date={dayjs(tournamentDates.weeklyMP.startDate).format("M/D/YYYY")}
+              date={formatTournamentDate(tournamentDates.weeklyMP.startDate)}
               type="Time Trials"
               description="Best weeks times"
               endedTime={getTimeStatus(tournamentDates.weeklyMP.endDate)}
@@ -185,7 +186,7 @@ export default function Home({
 
             <TournamentLeaderboard
               title="Multi-Player: Monthly Tournament"
-              date={dayjs(tournamentDates.monthlyMP.startDate).format("M/D/YYYY")}
+              date={formatTournamentDate(tournamentDates.monthlyMP.startDate)}
               type="Time Trials"
               description="Best months times"
               endedTime={getTimeStatus(tournamentDates.monthlyMP.endDate)}

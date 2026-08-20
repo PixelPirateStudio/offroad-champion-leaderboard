@@ -3,6 +3,7 @@ import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 dayjs.extend(relativeTime);
 import { TournamentEvent } from "../../../utils/types/events";
+import { formatTournamentDate } from "../../../utils/dateUtils";
 import { userDictionary } from "../../../utils/types/user";
 import getUnicodeFlagIcon from "country-flag-icons/unicode";
 
@@ -25,7 +26,7 @@ export const RecentEvent = (props: { event: TournamentEvent }) => {
         <div className={`flex flex-col gap-0 min-w-0 flex-1`}>
           <h5 className={`font-bold text-base truncate`}>{event.name}</h5>
           <span className={`text-sm font-semibold truncate`}>
-            {dayjs(event.startDate).format("M/D/YYYY")}
+            {formatTournamentDate(event.startDate)}
           </span>
           <span className={`text-xs text-gray-400 truncate`}>
             {new Date(event.endDate) > new Date() ? "Ends" : "Ended"}{" "}

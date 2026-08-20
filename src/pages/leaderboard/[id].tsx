@@ -7,6 +7,7 @@ import {
   transformLeaderboardResponse,
   formatPrize,
 } from "@/utils/apiTransformers";
+import { formatTournamentDate } from "@/utils/dateUtils";
 import dayjs from "dayjs";
 import { useRouter } from "next/router";
 import { ArrowLeftIcon } from "@heroicons/react/24/outline";
@@ -141,7 +142,7 @@ export default function LeaderboardDetail({
                     {leaderboardName}
                   </h1>
                   <p className="text-lg lg:text-xl text-white mb-2">
-                    {dayjs(startDate).format("M/D/YYYY")}
+                    {formatTournamentDate(startDate)}
                   </p>
                   <p className="text-gray-400 text-sm">
                     All contestants must complete at least {qualifyingRaces} races to qualify.
@@ -234,7 +235,7 @@ export default function LeaderboardDetail({
                   }`}></div>
                   {tournamentStatus.text}
                 </div>
-                <div className="text-white text-center mb-2">{dayjs(startDate).format("MMMM YYYY")}</div>
+                <div className="text-white text-center mb-2">{formatTournamentDate(startDate, "MMMM YYYY")}</div>
                 <div className="grid grid-cols-7 gap-1 text-xs text-gray-400 mb-1">
                   <div>S</div>
                   <div>M</div>
