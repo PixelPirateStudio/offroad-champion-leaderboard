@@ -71,12 +71,12 @@ export const TournamentLeaderboard = ({
       />
 
       {/* Table Header */}
-      <div className="grid grid-cols-[60px_1fr_140px_100px_120px] items-center pb-2 mb-2 border-b border-gray-700">
+      <div className="grid grid-cols-[40px_1fr_110px] sm:grid-cols-[60px_1fr_140px_100px_120px] items-center pb-2 mb-2 border-b border-gray-700">
         <div className="text-gray-400 text-sm">Place</div>
         <div className="text-gray-400 text-sm">Player</div>
         <div className="text-gray-400 text-sm flex justify-center">Score</div>
-        <div className="text-gray-400 text-sm flex justify-center">Races</div>
-        <div className="text-gray-400 text-sm flex justify-center">
+        <div className="hidden sm:flex text-gray-400 text-sm justify-center">Races</div>
+        <div className="hidden sm:flex text-gray-400 text-sm justify-center">
           Qualification
         </div>
       </div>
@@ -101,7 +101,7 @@ export const TournamentLeaderboard = ({
             return (
               <div
                 key={`empty-${index}`}
-                className="grid grid-cols-[60px_1fr_140px_100px_120px] items-center py-0 border- border-gray-800 last:border-b-0 font-family-inter"
+                className="grid grid-cols-[40px_1fr_110px] sm:grid-cols-[60px_1fr_140px_100px_120px] items-center py-0 border- border-gray-800 last:border-b-0 font-family-inter"
               >
                 <div className="text-gray-600 text-lg">{index + 1}</div>
                 <div className="flex items-center gap-2 min-w-0">
@@ -109,8 +109,8 @@ export const TournamentLeaderboard = ({
                   <span className="text-gray-600 text-base truncate">—</span>
                 </div>
                 <div className="text-gray-600 text-base flex justify-center truncate">—</div>
-                <div className="text-gray-600 text-base flex justify-center truncate">—</div>
-                <div className="flex justify-center">
+                <div className="hidden sm:flex text-gray-600 text-base justify-center truncate">—</div>
+                <div className="hidden sm:flex justify-center">
                   <div className="w-6 h-6"></div>
                 </div>
               </div>
