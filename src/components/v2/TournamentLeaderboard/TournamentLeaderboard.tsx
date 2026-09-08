@@ -31,14 +31,15 @@ export const TournamentLeaderboard = ({
   initialDisplayCount = 6,
 }: TournamentLeaderboardProps) => {
   const formatTime = (ms: number) => {
-    const totalSeconds = Math.floor(ms / 1000);
+    const rounded = Math.round(ms);
+    const totalSeconds = Math.floor(rounded / 1000);
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
-    const milliseconds = ms % 1000;
+    const milliseconds = rounded % 1000;
 
     return `00:${minutes.toString().padStart(2, "0")}:${seconds
       .toString()
-      .padStart(2, "0")}${milliseconds > 0 ? `.${milliseconds}` : ""}`;
+      .padStart(2, "0")}.${milliseconds.toString().padStart(3, "0")}`;
   };
 
   const getFastestTime = (entry: MergedEntry) => {
