@@ -1,19 +1,33 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Elements } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
 import {
   playerApi,
+  ApiError,
   type StripePayoutQuote,
   type CoinbaseAsset,
   type CoinbaseCharge,
   type CoinbaseDepositQuote,
   type CoinbasePayoutQuote,
+  type KycStatus,
+  type KycStatusResult,
 } from "@/services/playerApi";
 import AddCashStripeFlow from "@/components/wallet/AddCashStripeFlow";
 import AddCashPayPalFlow from "@/components/wallet/AddCashPayPalFlow";
-import { FaUniversity, FaGlobeAmericas, FaPaypal } from "react-icons/fa";
+import {
+  FaUniversity,
+  FaGlobeAmericas,
+  FaPaypal,
+  FaShieldAlt,
+  FaClock,
+  FaRedo,
+  FaSearch,
+  FaCheckCircle,
+  FaTimesCircle,
+  FaExclamationTriangle,
+} from "react-icons/fa";
 import { SiCashapp, SiCoinbase } from "react-icons/si";
 import { US } from "country-flag-icons/react/3x2";
 import countries from "i18n-iso-countries";
@@ -112,15 +126,6 @@ type PayPalTransferFormData = {
   paypalEmail: string;
 };
 
-type IdentityFormData = {
-  legalName: string;
-  address: string;
-  city: string;
-  state: string;
-  zip: string;
-  dateOfBirth: string;
-  attestationAccepted: boolean;
-};
 
 const USD_PER_GM = 0.01;
 const USE_MOCK_API = process.env.NEXT_PUBLIC_USE_MOCK_API === "true";
@@ -214,6 +219,172 @@ const CryptoFeeBreakdown = ({
   );
 };
 
+// Shared presentation for the identity-verification step. Kept as one source of
+// truth so the real verify stage and the dev preview always look identical.
+type VerifyTone = "default" | "success" | "warn" | "danger";
+
+const VERIFY_TONE_COLORS: Record<VerifyTone, string> = {
+  default: "#FFBD17",
+  success: "#35C46B",
+  warn: "#F5A623",
+  danger: "#E5534B",
+};
+
+function verifyStatusView(status: string): {
+  title: string;
+  message: string;
+  primaryLabel: string;
+  tone: VerifyTone;
+  Icon: React.ComponentType<{ size?: number }>;
+} {
+  switch (status) {
+    case "pending":
+      return {
+        title: "Verification in Progress",
+        message: "We're finishing your identity check. This can take a moment.",
+        primaryLabel: "Continue Verification",
+        tone: "default",
+        Icon: FaClock,
+      };
+    case "resubmission_requested":
+      return {
+        title: "Additional Information Needed",
+        message:
+          "We need another photo or document to finish verifying your identity.",
+        primaryLabel: "Continue Verification",
+        tone: "warn",
+        Icon: FaRedo,
+      };
+    case "review":
+      return {
+        title: "Verification Under Review",
+        message:
+          "Your verification is being reviewed. This page updates automatically.",
+        primaryLabel: "Check Status",
+        tone: "default",
+        Icon: FaSearch,
+      };
+    case "approved":
+      return {
+        title: "Identity Verified",
+        message: "You're verified and ready to continue your withdrawal.",
+        primaryLabel: "Continue Withdrawal",
+        tone: "success",
+        Icon: FaCheckCircle,
+      };
+    case "declined":
+      return {
+        title: "Verification Unsuccessful",
+        message: "We couldn't verify your identity. You can try again.",
+        primaryLabel: "Try Verification Again",
+        tone: "danger",
+        Icon: FaTimesCircle,
+      };
+    case "expired":
+      return {
+        title: "Verification Expired",
+        message: "Your verification session expired. Please start again.",
+        primaryLabel: "Start Verification Again",
+        tone: "warn",
+        Icon: FaClock,
+      };
+    case "abandoned":
+      return {
+        title: "Verification Incomplete",
+        message: "Your verification wasn't finished. Please start again.",
+        primaryLabel: "Start Verification Again",
+        tone: "warn",
+        Icon: FaExclamationTriangle,
+      };
+    case "none":
+    default:
+      return {
+        title: "Identity Verification Required",
+        message:
+          "To keep withdrawals secure, please verify your identity before continuing.",
+        primaryLabel: "Verify Identity",
+        tone: "default",
+        Icon: FaShieldAlt,
+      };
+  }
+}
+
+// The dark ORC-styled verification panel. Presentational only — the caller wires
+// up the primary/back actions (real handlers, or inert in preview).
+function VerificationPanel({
+  status,
+  busy = false,
+  error = null,
+  thresholdUsd = null,
+  onPrimary,
+  onBack,
+}: {
+  status: string;
+  busy?: boolean;
+  error?: string | null;
+  thresholdUsd?: number | null;
+  onPrimary: () => void;
+  onBack: () => void;
+}) {
+  const view = verifyStatusView(status);
+  const toneColor = VERIFY_TONE_COLORS[view.tone];
+  const message =
+    status === "none" && typeof thresholdUsd === "number"
+      ? `Withdrawals of $${thresholdUsd} or more require identity verification.`
+      : view.message;
+  const { Icon } = view;
+
+  return (
+    <div style={verifyPanel}>
+      <div style={verifyStepBar}>
+        <span>Withdrawal</span>
+        <span style={verifyStepSep}>›</span>
+        <span style={verifyStepActive}>Identity Verification</span>
+        <span style={verifyStepSep}>›</span>
+        <span>Confirm</span>
+      </div>
+
+      <div style={{ ...verifyIconWrap, color: toneColor }}>
+        <Icon size={28} />
+      </div>
+
+      <div style={verifyTitle}>{view.title}</div>
+      <p style={verifyMessage}>{message}</p>
+
+      {error && <div style={verifyError}>{error}</div>}
+
+      <div style={verifyActions}>
+        <button
+          type="button"
+          style={{
+            ...verifySecondaryBtn,
+            opacity: busy ? 0.55 : 1,
+            cursor: busy ? "not-allowed" : "pointer",
+          }}
+          disabled={busy}
+          onClick={onBack}
+        >
+          Back
+        </button>
+        <button
+          type="button"
+          style={{
+            ...verifyPrimaryBtn,
+            opacity: busy ? 0.6 : 1,
+            cursor: busy ? "not-allowed" : "pointer",
+          }}
+          disabled={busy}
+          onClick={onPrimary}
+        >
+          {busy ? "Please wait…" : view.primaryLabel}
+        </button>
+      </div>
+
+      <p style={verifyFootnote}>Identity verification powered by Veriff</p>
+    </div>
+  );
+}
+
 export default function BetBurn() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -305,15 +476,14 @@ export default function BetBurn() {
     fullName: "",
     paypalEmail: "",
   });
-  const [identityForm, setIdentityForm] = useState<IdentityFormData>({
-    legalName: "",
-    address: "",
-    city: "",
-    state: "",
-    zip: "",
-    dateOfBirth: "",
-    attestationAccepted: false,
-  });
+  // Veriff KYC state (drives the verify stage). The session URL is never stored
+  // here — it is used transiently to open the hosted Veriff flow.
+  const [kycState, setKycState] = useState<KycStatusResult | null>(null);
+  const [kycChecking, setKycChecking] = useState(false);
+  const [kycError, setKycError] = useState<string | null>(null);
+  const [veriffOpening, setVeriffOpening] = useState(false);
+  const pendingContinuationRef = useRef<null | (() => void)>(null);
+  const kycPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [transferSubmitting, setTransferSubmitting] = useState(false);
   const [transferSubmitErr, setTransferSubmitErr] = useState<string | null>(
     null,
@@ -736,14 +906,6 @@ export default function BetBurn() {
     parsedTransferAmount,
     hasValidTransferAmount,
   ]);
-  const identityFormReady =
-    identityForm.legalName.trim() !== "" &&
-    identityForm.address.trim() !== "" &&
-    identityForm.city.trim() !== "" &&
-    identityForm.state.trim() !== "" &&
-    identityForm.zip.trim() !== "" &&
-    identityForm.dateOfBirth.trim() !== "" &&
-    identityForm.attestationAccepted;
 
   const w9FormReady =
     w9Form.fullName.trim() !== "" &&
@@ -1007,6 +1169,166 @@ export default function BetBurn() {
     }
   };
 
+  // ---------------------------------------------------------------------------
+  // Veriff KYC (identity verification) integration
+  // ---------------------------------------------------------------------------
+
+  const stopKycPolling = useCallback(() => {
+    if (kycPollRef.current) {
+      clearInterval(kycPollRef.current);
+      kycPollRef.current = null;
+    }
+  }, []);
+
+  // Re-read the authoritative status from the backend for the current amount.
+  const refreshKycStatus = useCallback(async () => {
+    try {
+      const status = await playerApi.getKycStatus(parsedTransferAmount);
+      setKycState(status);
+    } catch {
+      // Keep the last known status; a transient failure shouldn't wipe the UI.
+    }
+  }, [parsedTransferAmount]);
+
+  // Detect the backend's machine-readable KYC gate (never message-text matching).
+  const isKycRequiredError = (e: unknown): boolean =>
+    e instanceof ApiError && e.code === "KYC_REQUIRED";
+
+  // Backstop: the backend rejected the redemption with KYC_REQUIRED. Refresh
+  // status for this amount and route the user into the verify stage.
+  const handleKycRequired = async () => {
+    setTransferSubmitErr(null);
+    await refreshKycStatus();
+    setKycError(
+      "Identity verification is required before this withdrawal can be completed.",
+    );
+    setTransferStage("verify");
+  };
+
+  // Gate the transition out of the details/method step. The backend decides
+  // whether verification is required for this amount — never the frontend.
+  const runKycGate = async (proceed: () => void) => {
+    if (kycChecking) return;
+    setKycChecking(true);
+    setTransferSubmitErr(null);
+    try {
+      const status = await playerApi.getKycStatus(parsedTransferAmount);
+      if (!status.kycRequired || status.kycStatus === "approved") {
+        proceed();
+        return;
+      }
+      pendingContinuationRef.current = proceed;
+      setKycState(status);
+      setKycError(null);
+      setTransferStage("verify");
+    } catch {
+      // Fail safe: do NOT assume verification isn't required — stay put + retry.
+      setTransferSubmitErr(
+        "We couldn't check your verification status. Please try again.",
+      );
+    } finally {
+      setKycChecking(false);
+    }
+  };
+
+  // Open the hosted Veriff flow. The blank window is opened synchronously inside
+  // the click handler so popup blockers allow it; the URL is only used to
+  // navigate that window and is never logged or persisted.
+  const openVeriff = () => {
+    if (veriffOpening) return;
+    setKycError(null);
+    setVeriffOpening(true);
+
+    const win = window.open("about:blank", "_blank");
+    if (win) {
+      // noopener-equivalent while keeping the handle so we can navigate it.
+      try {
+        win.opener = null;
+      } catch {
+        /* ignore */
+      }
+    }
+
+    playerApi
+      .createVeriffSession()
+      .then((session) => {
+        if (session.status === "approved") {
+          if (win) win.close();
+          setKycState((prev) =>
+            prev ? { ...prev, kycStatus: "approved" } : prev,
+          );
+          return;
+        }
+        if (session.status === "review") {
+          if (win) win.close();
+          setKycState((prev) => (prev ? { ...prev, kycStatus: "review" } : prev));
+          return;
+        }
+        if (session.url) {
+          if (win) {
+            win.location.href = session.url;
+          } else {
+            setKycError(
+              "Your browser blocked the verification window. Please tap the button again to continue.",
+            );
+          }
+          setKycState((prev) =>
+            prev ? { ...prev, kycStatus: session.status } : prev,
+          );
+          void refreshKycStatus();
+        } else {
+          if (win) win.close();
+          setKycError("We couldn't start verification. Please try again.");
+        }
+      })
+      .catch(() => {
+        if (win) win.close();
+        setKycError("We couldn't start verification. Please try again.");
+      })
+      .finally(() => setVeriffOpening(false));
+  };
+
+  // Approved users still explicitly continue to the existing confirm screen.
+  const continueAfterApproval = () => {
+    stopKycPolling();
+    const proceed = pendingContinuationRef.current;
+    pendingContinuationRef.current = null;
+    if (proceed) {
+      proceed();
+    } else {
+      setTransferStage("confirm");
+    }
+  };
+
+  // Immediate status refresh + refresh on window focus while on the verify stage.
+  useEffect(() => {
+    if (transferStage !== "verify") return;
+    void refreshKycStatus();
+    const onFocus = () => void refreshKycStatus();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [transferStage, refreshKycStatus]);
+
+  // Poll ~every 5s only while a verification is in a non-terminal state.
+  useEffect(() => {
+    if (transferStage !== "verify") {
+      stopKycPolling();
+      return;
+    }
+    const status = kycState?.kycStatus;
+    const shouldPoll =
+      status === "pending" ||
+      status === "resubmission_requested" ||
+      status === "review";
+    stopKycPolling();
+    if (shouldPoll) {
+      kycPollRef.current = setInterval(() => {
+        void refreshKycStatus();
+      }, 5000);
+    }
+    return () => stopKycPolling();
+  }, [transferStage, kycState?.kycStatus, refreshKycStatus, stopKycPolling]);
+
   const submitStripePayout = async () => {
     const transferUsd = Number.isFinite(parsedTransferAmount)
       ? parsedTransferAmount
@@ -1066,6 +1388,10 @@ export default function BetBurn() {
       setTransferStage("success");
       void safeSyncProfileAfterMutation(expectedGains);
     } catch (e: unknown) {
+      if (isKycRequiredError(e)) {
+        await handleKycRequired();
+        return;
+      }
       const message =
         e instanceof Error ? e.message : "Stripe withdrawal submission failed";
       setTransferSubmitErr(message);
@@ -1155,6 +1481,10 @@ export default function BetBurn() {
       setTransferStage("success");
       void safeSyncProfileAfterMutation(expectedGains);
     } catch (e: unknown) {
+      if (isKycRequiredError(e)) {
+        await handleKycRequired();
+        return;
+      }
       setTransferSubmitErr(
         e instanceof Error ? e.message : "Crypto withdrawal submission failed",
       );
@@ -1213,6 +1543,10 @@ export default function BetBurn() {
 
       void safeSyncProfileAfterMutation(expectedGains);
     } catch (e: unknown) {
+      if (isKycRequiredError(e)) {
+        await handleKycRequired();
+        return;
+      }
       setTransferSubmitErr(
         e instanceof Error ? e.message : "Withdrawal submission failed",
       );
@@ -2271,8 +2605,10 @@ export default function BetBurn() {
                             // send them straight into the Stripe flow instead
                             // of collecting account numbers ourselves.
                             if (selectedPayoutMethod === "bank") {
+                              // Bank routes through Stripe; set the method now so
+                              // the verify stage's Back returns to "method".
                               setTransferMethod("stripe");
-                              void prepareStripePayout();
+                              void runKycGate(() => void prepareStripePayout());
                               return;
                             }
 
@@ -2408,7 +2744,9 @@ export default function BetBurn() {
                               opacity: bankFormReady ? 1 : 0.5,
                               cursor: bankFormReady ? "pointer" : "not-allowed",
                             }}
-                            onClick={() => setTransferStage("verify")}
+                            onClick={() =>
+                              void runKycGate(() => setTransferStage("confirm"))
+                            }
                           >
                             Next
                           </button>
@@ -2538,7 +2876,9 @@ export default function BetBurn() {
                                   ? "pointer"
                                   : "not-allowed",
                             }}
-                            onClick={() => void prepareCoinbasePayout()}
+                            onClick={() =>
+                              void runKycGate(() => void prepareCoinbasePayout())
+                            }
                           >
                             {transferSubmitting ? "Quoting..." : "Next"}
                           </button>
@@ -2631,7 +2971,7 @@ export default function BetBurn() {
                             }}
                             onClick={() => {
                               setTransferSubmitErr(null);
-                              setTransferStage("confirm");
+                              void runKycGate(() => setTransferStage("confirm"));
                             }}
                           >
                             Next
@@ -2642,115 +2982,46 @@ export default function BetBurn() {
                   </div>
                 )}
 
-                {transferStage === "verify" && (
-                  <div style={transferScene}>
-                    <div style={transferPanelLarge}>
-                      <div style={transferPanelTitle}>Verify Your Identity</div>
-                      <div style={formGridSingle}>
-                        <input
-                          style={transferInput}
-                          placeholder="Legal name"
-                          value={identityForm.legalName}
-                          onChange={(e) =>
-                            setIdentityForm((prev) => ({
-                              ...prev,
-                              legalName: e.target.value,
-                            }))
-                          }
-                        />
-                        <input
-                          style={transferInput}
-                          placeholder="Address"
-                          value={identityForm.address}
-                          onChange={(e) =>
-                            setIdentityForm((prev) => ({
-                              ...prev,
-                              address: e.target.value,
-                            }))
-                          }
-                        />
-                        <div style={formGridTriple}>
-                          <input
-                            style={transferInput}
-                            placeholder="City"
-                            value={identityForm.city}
-                            onChange={(e) =>
-                              setIdentityForm((prev) => ({
-                                ...prev,
-                                city: e.target.value,
-                              }))
-                            }
-                          />
-                          <input
-                            style={transferInput}
-                            placeholder="State"
-                            value={identityForm.state}
-                            onChange={(e) =>
-                              setIdentityForm((prev) => ({
-                                ...prev,
-                                state: e.target.value,
-                              }))
-                            }
-                          />
-                          <input
-                            style={transferInput}
-                            placeholder="ZIP"
-                            value={identityForm.zip}
-                            onChange={(e) =>
-                              setIdentityForm((prev) => ({
-                                ...prev,
-                                zip: e.target.value,
-                              }))
-                            }
-                          />
-                        </div>
-                        <input
-                          style={transferInput}
-                          type="date"
-                          value={identityForm.dateOfBirth}
-                          onChange={(e) =>
-                            setIdentityForm((prev) => ({
-                              ...prev,
-                              dateOfBirth: e.target.value,
-                            }))
-                          }
-                        />
-                        <label style={attestationRow}>
-                          <input
-                            type="checkbox"
-                            checked={identityForm.attestationAccepted}
-                            onChange={(e) =>
-                              setIdentityForm((prev) => ({
-                                ...prev,
-                                attestationAccepted: e.target.checked,
-                              }))
-                            }
-                          />
-                          I confirm this information is accurate and I authorize
-                          ORC to process this withdrawal.
-                        </label>
-                      </div>
+                {transferStage === "verify" &&
+                  (() => {
+                    const status: KycStatus = kycState?.kycStatus ?? "none";
+                    const busy = veriffOpening || kycChecking;
 
-                      <div style={transferActionsRow}>
-                        <button
-                          style={transferSecondaryButton}
-                          type="button"
-                          onClick={() => setTransferStage("details")}
-                        >
-                          Back
-                        </button>
-                        <button
-                          style={transferPrimaryButton}
-                          type="button"
-                          disabled={!identityFormReady}
-                          onClick={() => setTransferStage("confirm")}
-                        >
-                          Continue
-                        </button>
+                    // Primary action per status (copy/labels live in
+                    // VerificationPanel): approved continues to confirm, review
+                    // re-checks status, everything else (re)opens Veriff.
+                    const primaryAction =
+                      status === "approved"
+                        ? continueAfterApproval
+                        : status === "review"
+                          ? () => void refreshKycStatus()
+                          : openVeriff;
+
+                    const goBack = () => {
+                      stopKycPolling();
+                      setKycError(null);
+                      setTransferStage(
+                        transferMethod === "stripe" ? "method" : "details",
+                      );
+                    };
+
+                    return (
+                      <div style={verifyScene}>
+                        <VerificationPanel
+                          status={status}
+                          busy={busy}
+                          error={kycError}
+                          thresholdUsd={
+                            kycState?.thresholdConfigured
+                              ? kycState.thresholdUsd
+                              : null
+                          }
+                          onPrimary={() => primaryAction()}
+                          onBack={goBack}
+                        />
                       </div>
-                    </div>
-                  </div>
-                )}
+                    );
+                  })()}
 
                 {transferStage === "confirm" && (
                   <div style={addCashConfirmScene}>
@@ -4685,64 +4956,6 @@ const taxSubmissionContinueButton: React.CSSProperties = {
 //   padding: "4px 12px",
 // };
 
-const transferPanel: React.CSSProperties = {
-  width: "min(520px, 92vw)",
-  background: "rgba(255,255,255,0.97)",
-  borderRadius: 12,
-  padding: 22,
-  boxSizing: "border-box",
-  color: "#111",
-};
-
-const transferPanelLarge: React.CSSProperties = {
-  ...transferPanel,
-  width: "min(640px, 92vw)",
-};
-
-const transferPanelTitle: React.CSSProperties = {
-  fontSize: 18,
-  fontWeight: 700,
-  marginBottom: 14,
-};
-
-const formGridSingle: React.CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: 10,
-};
-
-const formGridTriple: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "2fr 1fr 1fr",
-  gap: 8,
-};
-
-const transferInput: React.CSSProperties = {
-  width: "100%",
-  borderRadius: 6,
-  border: "1px solid rgba(17,17,17,0.2)",
-  height: 36,
-  padding: "0 10px",
-  fontSize: 14,
-  boxSizing: "border-box",
-};
-
-const attestationRow: React.CSSProperties = {
-  display: "flex",
-  alignItems: "flex-start",
-  gap: 8,
-  fontSize: 12,
-  lineHeight: 1.35,
-  color: "rgba(17,17,17,0.82)",
-};
-
-const transferActionsRow: React.CSSProperties = {
-  marginTop: 14,
-  display: "flex",
-  justifyContent: "flex-end",
-  gap: 10,
-};
-
 const transferPrimaryButton: React.CSSProperties = {
   height: 34,
   minWidth: 110,
@@ -4765,6 +4978,125 @@ const transferSecondaryButton: React.CSSProperties = {
   fontWeight: 700,
   cursor: "pointer",
   padding: "0 16px",
+};
+
+/* ── Identity verification (Veriff) — dark ORC Wallet styling ── */
+const verifyScene: React.CSSProperties = {
+  marginTop: 24,
+  width: "100%",
+  display: "flex",
+  justifyContent: "center",
+  alignItems: "flex-start",
+  boxSizing: "border-box",
+};
+
+const verifyPanel: React.CSSProperties = {
+  width: "min(560px, 92vw)",
+  marginTop: 20,
+  background: "rgba(255,255,255,0.04)",
+  border: "1px solid rgba(255,255,255,0.10)",
+  borderRadius: 20,
+  padding: "34px 40px 26px",
+  boxSizing: "border-box",
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  textAlign: "center",
+};
+
+const verifyStepBar: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  flexWrap: "wrap",
+  justifyContent: "center",
+  fontSize: 12,
+  fontWeight: 600,
+  letterSpacing: "0.02em",
+  color: "rgba(255,255,255,0.5)",
+  marginBottom: 22,
+};
+
+const verifyStepActive: React.CSSProperties = {
+  color: "#FFBD17",
+};
+
+const verifyStepSep: React.CSSProperties = {
+  color: "rgba(255,255,255,0.3)",
+};
+
+const verifyIconWrap: React.CSSProperties = {
+  width: 64,
+  height: 64,
+  borderRadius: "50%",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  border: "1px solid rgba(255,255,255,0.14)",
+  background: "rgba(255,255,255,0.05)",
+  marginBottom: 18,
+};
+
+const verifyTitle: React.CSSProperties = {
+  fontSize: 22,
+  fontWeight: 700,
+  color: "#F7D023",
+  marginBottom: 10,
+};
+
+const verifyMessage: React.CSSProperties = {
+  fontSize: 15,
+  lineHeight: 1.55,
+  color: "rgba(255,255,255,0.78)",
+  margin: "0 auto",
+  maxWidth: 420,
+};
+
+const verifyError: React.CSSProperties = {
+  marginTop: 14,
+  color: "salmon",
+  fontSize: 13,
+  fontWeight: 600,
+};
+
+const verifyActions: React.CSSProperties = {
+  marginTop: 26,
+  display: "flex",
+  gap: 12,
+  width: "100%",
+  justifyContent: "center",
+  flexWrap: "wrap",
+};
+
+const verifyPrimaryBtn: React.CSSProperties = {
+  height: 48,
+  minWidth: 210,
+  borderRadius: 999,
+  border: "none",
+  background: "#FFBD17",
+  color: "#000",
+  fontWeight: 700,
+  fontSize: 15,
+  padding: "0 22px",
+};
+
+const verifySecondaryBtn: React.CSSProperties = {
+  height: 48,
+  minWidth: 110,
+  borderRadius: 999,
+  border: "1px solid rgba(255,255,255,0.18)",
+  background: "transparent",
+  color: "#fff",
+  fontWeight: 700,
+  fontSize: 15,
+  padding: "0 20px",
+};
+
+const verifyFootnote: React.CSSProperties = {
+  marginTop: 22,
+  fontSize: 11,
+  color: "rgba(255,255,255,0.4)",
+  letterSpacing: "0.02em",
 };
 
 const bankDetailsPanel: React.CSSProperties = {
