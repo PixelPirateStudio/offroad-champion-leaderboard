@@ -68,10 +68,15 @@ interface PlayerDetailResponse {
   transactions: Transaction[];
 }
 
+interface PlayerTransactionsResponse {
+  total: number;
+  transactions: Transaction[];
+}
+
 interface TournamentWin {
   tournamentId: string;
-  period: 'daily' | 'weekly' | 'monthly';
-  mode: 'singleplayer' | 'multiplayer';
+  period: "daily" | "weekly" | "monthly";
+  mode: "singleplayer" | "multiplayer";
   startDate: string;
   endDate: string;
   winningTime: number;
@@ -114,14 +119,31 @@ export default function PlayerDetailPage() {
   const { isLoading: authLoading, isAuthenticated } = useRequireAdmin();
   const [data, setData] = useState<PlayerDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [races, setRaces] = useState<RaceValidation[]>([]);
   const [racesLoading, setRacesLoading] = useState(false);
   const [showRaces, setShowRaces] = useState(false);
-  const [tournamentWins, setTournamentWins] = useState<TournamentWinsResponse | null>(null);
+  const [tournamentWins, setTournamentWins] =
+    useState<TournamentWinsResponse | null>(null);
   const [tournamentWinsLoading, setTournamentWinsLoading] = useState(false);
   const [showTournamentWins, setShowTournamentWins] = useState(false);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [transactionTotal, setTransactionTotal] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [datePreset, setDatePreset] = useState("");
+
+  const TRANSACTIONS_PER_PAGE = 25;
+
+  const totalPages = Math.ceil(transactionTotal / TRANSACTIONS_PER_PAGE);
+
+  const paginatedTransactions = transactions.slice(
+    (currentPage - 1) * TRANSACTIONS_PER_PAGE,
+    currentPage * TRANSACTIONS_PER_PAGE,
+  );
 
   // Modals
   const [showFreezeModal, setShowFreezeModal] = useState(false);
@@ -134,27 +156,54 @@ export default function PlayerDetailPage() {
     }
   }, [isAuthenticated, id]);
 
+  useEffect(() => {
+    if (isAuthenticated && id) {
+      loadTransactions();
+    }
+  }, [isAuthenticated, id, currentPage, startDate, endDate]);
+
   const loadPlayer = async () => {
     try {
       setLoading(true);
-      const result = await adminApi.getPlayer(id as string) as PlayerDetailResponse;
+      const result = (await adminApi.getPlayer(
+        id as string,
+      )) as PlayerDetailResponse;
       setData(result);
     } catch (err) {
-      setError((err as Error).message || 'Failed to load player details');
+      setError((err as Error).message || "Failed to load player details");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadTransactions = async () => {
+    if (!id) return;
+
+    try {
+      const result = (await adminApi.getPlayerTransactions(
+        id as string,
+        TRANSACTIONS_PER_PAGE,
+        (currentPage - 1) * TRANSACTIONS_PER_PAGE,
+        startDate || undefined,
+        endDate || undefined,
+      )) as PlayerTransactionsResponse;
+
+      setTransactions(result.transactions || []);
+      setTransactionTotal(result.total || 0);
+    } catch (err) {
+      console.error("Failed to load transactions:", err);
     }
   };
 
   const handleFreeze = async (reason: string) => {
     if (!id) return;
     try {
-      setError('');
-      setSuccess('');
+      setError("");
+      setSuccess("");
       await adminApi.freezeAccount(id as string, reason);
       await loadPlayer();
-      setSuccess('Account frozen successfully');
-      setTimeout(() => setSuccess(''), 5000);
+      setSuccess("Account frozen successfully");
+      setTimeout(() => setSuccess(""), 5000);
     } catch (err) {
       throw err; // Re-throw to let modal handle it
     }
@@ -163,12 +212,12 @@ export default function PlayerDetailPage() {
   const handleUnfreeze = async (reason: string) => {
     if (!id) return;
     try {
-      setError('');
-      setSuccess('');
+      setError("");
+      setSuccess("");
       await adminApi.unfreezeAccount(id as string, reason);
       await loadPlayer();
-      setSuccess('Account unfrozen successfully');
-      setTimeout(() => setSuccess(''), 5000);
+      setSuccess("Account unfrozen successfully");
+      setTimeout(() => setSuccess(""), 5000);
     } catch (err) {
       throw err; // Re-throw to let modal handle it
     }
@@ -182,12 +231,12 @@ export default function PlayerDetailPage() {
   }) => {
     if (!id) return;
     try {
-      setError('');
-      setSuccess('');
+      setError("");
+      setSuccess("");
       await adminApi.adjustFunds(id as string, fundsData);
       await loadPlayer();
-      setSuccess('Funds adjusted successfully');
-      setTimeout(() => setSuccess(''), 5000);
+      setSuccess("Funds adjusted successfully");
+      setTimeout(() => setSuccess(""), 5000);
     } catch (err) {
       throw err; // Re-throw to let modal handle it
     }
@@ -197,10 +246,12 @@ export default function PlayerDetailPage() {
     if (!id) return;
     try {
       setRacesLoading(true);
-      const result = await adminApi.getPlayerRaces(id as string, { limit: 10 }) as PlayerRacesResponse;
+      const result = (await adminApi.getPlayerRaces(id as string, {
+        limit: 10,
+      })) as PlayerRacesResponse;
       setRaces(result.races || []);
     } catch (err) {
-      console.error('Failed to load races:', err);
+      console.error("Failed to load races:", err);
     } finally {
       setRacesLoading(false);
     }
@@ -217,10 +268,12 @@ export default function PlayerDetailPage() {
     if (!id) return;
     try {
       setTournamentWinsLoading(true);
-      const result = await adminApi.getTournamentWins({ userId: id as string }) as TournamentWinsResponse;
+      const result = (await adminApi.getTournamentWins({
+        userId: id as string,
+      })) as TournamentWinsResponse;
       setTournamentWins(result);
     } catch (err) {
-      console.error('Failed to load tournament wins:', err);
+      console.error("Failed to load tournament wins:", err);
     } finally {
       setTournamentWinsLoading(false);
     }
@@ -255,14 +308,14 @@ export default function PlayerDetailPage() {
             Back
           </button>
           <div className="rounded-lg bg-red-900/30 border border-red-500/50 p-4">
-            <p className="text-red-200">{error || 'Player not found'}</p>
+            <p className="text-red-200">{error || "Player not found"}</p>
           </div>
         </div>
       </AdminLayout>
     );
   }
 
-  const { player, transactions } = data;
+  const { player } = data;
 
   return (
     <AdminLayout>
@@ -447,39 +500,221 @@ export default function PlayerDetailPage() {
           {/* Transactions */}
           <div className="bg-[#0E0A1B] border border-purple-900/30 rounded-lg p-6">
             <h2 className="text-xl font-semibold text-white mb-4">
-              Recent Transactions
+              Transaction History
             </h2>
+
+            <div className="mb-4">
+              <label className="block text-sm text-gray-400 mb-1">
+                Quick Filter
+              </label>
+
+              <select
+                value={datePreset}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setDatePreset(value);
+                  setCurrentPage(1);
+
+                  const today = new Date();
+
+                  const formatDate = (date: Date) =>
+                    date.toISOString().split("T")[0];
+
+                  if (value === "all") {
+                    setStartDate("");
+                    setEndDate("");
+                  }
+
+                  if (value === "7days") {
+                    const start = new Date(today);
+                    start.setDate(today.getDate() - 6);
+
+                    setStartDate(formatDate(start));
+                    setEndDate(formatDate(today));
+                  }
+
+                  if (value === "30days") {
+                    const start = new Date(today);
+                    start.setDate(today.getDate() - 29);
+
+                    setStartDate(formatDate(start));
+                    setEndDate(formatDate(today));
+                  }
+
+                  if (value === "thisMonth") {
+                    const start = new Date(
+                      today.getFullYear(),
+                      today.getMonth(),
+                      1,
+                    );
+
+                    setStartDate(formatDate(start));
+                    setEndDate(formatDate(today));
+                  }
+
+                  if (value === "lastMonth") {
+                    const start = new Date(
+                      today.getFullYear(),
+                      today.getMonth() - 1,
+                      1,
+                    );
+
+                    const end = new Date(
+                      today.getFullYear(),
+                      today.getMonth(),
+                      0,
+                    );
+
+                    setStartDate(formatDate(start));
+                    setEndDate(formatDate(end));
+                  }
+                }}
+                className="bg-gray-800 text-white border border-gray-600 rounded px-3 py-2"
+              >
+                <option value="">Select Filter</option>
+                <option value="all">All Time</option>
+                <option value="7days">Last 7 Days</option>
+                <option value="30days">Last 30 Days</option>
+                <option value="thisMonth">This Month</option>
+                <option value="lastMonth">Last Month</option>
+              </select>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3 mb-4">
+              <div className="flex-1">
+                <label className="block text-sm text-gray-400 mb-1">From</label>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => {
+                    setStartDate(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full bg-gray-800 text-white border border-gray-600 rounded px-3 py-2"
+                />
+              </div>
+
+              <div className="flex-1">
+                <label className="block text-sm text-gray-400 mb-1">To</label>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => {
+                    setEndDate(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full bg-gray-800 text-white border border-gray-600 rounded px-3 py-2"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setStartDate("");
+                  setEndDate("");
+                  setDatePreset("");
+                  setCurrentPage(1);
+                }}
+                className="sm:self-end w-full sm:w-auto px-3 py-2 text-sm text-white border border-gray-600 rounded hover:bg-gray-800"
+              >
+                Clear
+              </button>
+            </div>
             {transactions && transactions.length > 0 ? (
               <div className="space-y-3">
-                {transactions.slice(0, 5).map((tx) => (
-                  <div
-                    key={tx.id}
-                    className="bg-[#190F31] rounded-lg p-3 flex justify-between items-center"
-                  >
-                    <div>
-                      <div className="text-sm text-white font-medium">
-                        {tx.type.replace("_", " ")} via {tx.provider}
+                <div className="max-h-80 overflow-y-auto pr-2">
+                  {transactions.map((tx) => (
+                    <div
+                      key={tx.id}
+                      className="bg-[#190F31] rounded-lg p-3 flex justify-between items-center"
+                    >
+                      <div>
+                        <div className="text-sm text-white font-medium">
+                          {tx.type.replace("_", " ")} via {tx.provider}
+                        </div>
+                        <div className="text-xs text-gray-400">
+                          {dayjs(tx.createdAt).format("MMM D, YYYY")}
+                        </div>
                       </div>
-                      <div className="text-xs text-gray-400">
-                        {dayjs(tx.createdAt).format("MMM D, YYYY")}
+                      <div className="text-right">
+                        <div
+                          className={`text-sm font-semibold ${
+                            tx.type.toLowerCase() === "withdrawal"
+                              ? "text-red-500"
+                              : "text-green-500"
+                          }`}
+                        >
+                          {tx.type.toLowerCase() === "withdrawal" ? "-" : "+"}$
+                          {Number(tx.value ?? 0).toFixed(2)}
+                        </div>
+                        <div
+                          className={`text-xs ${
+                            tx.status === "active"
+                              ? "text-green-400"
+                              : "text-gray-400"
+                          }`}
+                        >
+                          {tx.status}
+                        </div>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <div className="text-sm text-green-400 font-semibold">
-                        ${Number(tx.value ?? 0).toFixed(2)}
-                      </div>
-                      <div
-                        className={`text-xs ${
-                          tx.status === "active"
-                            ? "text-green-400"
-                            : "text-gray-400"
-                        }`}
-                      >
-                        {tx.status}
-                      </div>
-                    </div>
+                  ))}
+                </div>
+
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-center gap-2 mt-4 text-white">
+                    <button
+                      onClick={() =>
+                        setCurrentPage((page) => Math.max(page - 1, 1))
+                      }
+                      disabled={currentPage === 1}
+                      className="px-2 py-1 text-white disabled:opacity-40"
+                    >
+                      &lt;
+                    </button>
+
+                    {Array.from({ length: totalPages }, (_, index) => index + 1)
+                      .filter((page) => {
+                        return (
+                          page === 1 ||
+                          page === totalPages ||
+                          Math.abs(page - currentPage) <= 2
+                        );
+                      })
+                      .map((page, index, visiblePages) => {
+                        const previousPage = visiblePages[index - 1];
+
+                        return (
+                          <React.Fragment key={page}>
+                            {previousPage && page - previousPage > 1 && (
+                              <span className="px-1 text-gray-400">...</span>
+                            )}
+
+                            <button
+                              onClick={() => setCurrentPage(page)}
+                              className={`px-3 py-1 rounded ${
+                                currentPage === page
+                                  ? "bg-white text-black font-bold"
+                                  : "text-white"
+                              }`}
+                            >
+                              {page}
+                            </button>
+                          </React.Fragment>
+                        );
+                      })}
+
+                    <button
+                      onClick={() =>
+                        setCurrentPage((page) => Math.min(page + 1, totalPages))
+                      }
+                      disabled={currentPage === totalPages}
+                      className="px-2 py-1 text-white disabled:opacity-40"
+                    >
+                      &gt;
+                    </button>
                   </div>
-                ))}
+                )}
               </div>
             ) : (
               <p className="text-gray-400 text-sm">No transactions found</p>
