@@ -91,6 +91,47 @@ const mockCoinbaseQuote = (
   };
 };
 
+// Error that preserves the backend's machine-readable code (e.g. "KYC_REQUIRED")
+// so the UI can react to it without matching human-readable message text.
+export class ApiError extends Error {
+  code?: string;
+  status?: number;
+  constructor(message: string, code?: string, status?: number) {
+    super(message);
+    this.name = "ApiError";
+    this.code = code;
+    this.status = status;
+  }
+}
+
+export type KycStatus =
+  | "none"
+  | "pending"
+  | "approved"
+  | "declined"
+  | "resubmission_requested"
+  | "review"
+  | "expired"
+  | "abandoned";
+
+// GET /api/v2/veriff/status — the backend is authoritative about kycRequired.
+export type KycStatusResult = {
+  kycStatus: KycStatus;
+  kycVerifiedAt: string | null;
+  thresholdConfigured: boolean;
+  thresholdUsd: number | null;
+  kycRequired: boolean | null;
+};
+
+// POST /api/v2/veriff/session — normalized session result (url is transient/sensitive).
+export type VeriffSessionResult = {
+  status: KycStatus;
+  alreadyVerified?: boolean;
+  sessionId?: string;
+  url?: string;
+  kycVerifiedAt?: string | null;
+};
+
 class PlayerApiService {
   private baseUrl: string;
   private token: string | null = null;
@@ -411,8 +452,66 @@ class PlayerApiService {
     });
 
     const data = await this.readResponse(r);
-    if (!r.ok) throw new Error(data?.message || "Failed to create redemption");
+    if (!r.ok)
+      throw new ApiError(
+        data?.message || "Failed to create redemption",
+        data?.code,
+        r.status,
+      );
     return data;
+  }
+
+  // GET /api/v2/veriff/status — optionally scoped to a withdrawal amount (USD).
+  // The frontend never computes the threshold itself; the backend is authoritative.
+  async getKycStatus(amountUsd?: number): Promise<KycStatusResult> {
+    if (USE_MOCK_API) {
+      return {
+        kycStatus: "none",
+        kycVerifiedAt: null,
+        thresholdConfigured: false,
+        thresholdUsd: null,
+        kycRequired: false,
+      };
+    }
+
+    const suffix =
+      typeof amountUsd === "number" && Number.isFinite(amountUsd)
+        ? `?amount=${encodeURIComponent(amountUsd)}`
+        : "";
+    const r = await fetch(`${this.baseUrl}/api/v2/veriff/status${suffix}`, {
+      method: "GET",
+      headers: this.headers(),
+    });
+    const data = await this.readResponse(r);
+    if (!r.ok)
+      throw new ApiError(
+        data?.message || "Failed to fetch verification status",
+        data?.code,
+        r.status,
+      );
+    return data as KycStatusResult;
+  }
+
+  // POST /api/v2/veriff/session — no user/profile id is sent; the backend derives
+  // the user from auth. The returned `url` is sensitive (session token): the caller
+  // must use it transiently and never log or persist it.
+  async createVeriffSession(): Promise<VeriffSessionResult> {
+    if (USE_MOCK_API) {
+      return { status: "pending", sessionId: "mock-session", url: "about:blank" };
+    }
+
+    const r = await fetch(`${this.baseUrl}/api/v2/veriff/session`, {
+      method: "POST",
+      headers: this.headers(),
+    });
+    const data = await this.readResponse(r);
+    if (!r.ok)
+      throw new ApiError(
+        data?.message || "Failed to start verification",
+        data?.code,
+        r.status,
+      );
+    return data as VeriffSessionResult;
   }
 
   async createStripePayout(params: { amount: number }) {
@@ -446,8 +545,10 @@ class PlayerApiService {
 
     const data = await this.readResponse(r);
     if (!r.ok) {
-      throw new Error(
+      throw new ApiError(
         data?.message || data?.error || "Failed to create Stripe payout",
+        data?.code,
+        r.status,
       );
     }
     return data;
@@ -632,8 +733,10 @@ class PlayerApiService {
 
     const data = await this.readResponse(r);
     if (!r.ok) {
-      throw new Error(
+      throw new ApiError(
         data?.message || data?.error || "Crypto withdrawal failed",
+        data?.code,
+        r.status,
       );
     }
     return data;
