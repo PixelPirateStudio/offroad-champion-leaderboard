@@ -1,0 +1,600 @@
+.page {
+  min-height: 100vh;
+  box-sizing: border-box;
+  padding: 0;
+  overflow-x: hidden;
+  background: #000;
+  color: #fff;
+  font-family: "Segoe UI", Calibri, Arial, sans-serif;
+}
+
+.canvas {
+  position: relative;
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 22px clamp(32px, 5vw, 74px) 64px;
+  box-sizing: border-box;
+  overflow: hidden;
+  background:
+    linear-gradient(rgba(0, 0, 0, 0.73), rgba(0, 0, 0, 0.76)),
+    url("/bg.jpg") center / cover no-repeat;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+}
+
+.logo {
+  width: 74px;
+  height: 74px;
+  object-fit: contain;
+}
+
+.brandName {
+  color: #ffdb0a;
+  font-size: 32px;
+  font-weight: 750;
+}
+
+.accountActions {
+  position: absolute;
+  top: 30px;
+  right: 102px;
+  z-index: 30;
+  display: flex;
+  height: 28px;
+  align-items: center;
+  gap: 12px;
+}
+
+.accountButton {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+}
+
+.accountDivider {
+  width: 1px;
+  height: 28px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.content {
+  position: relative;
+  display: flex;
+  width: 100%;
+  padding-bottom: 24px;
+  flex-direction: column;
+  align-items: center;
+}
+
+.tabs {
+  display: flex;
+  width: 100%;
+  margin-top: 33px;
+  justify-content: center;
+}
+
+.tabTrack {
+  display: flex;
+  width: min(880px, 88%);
+  min-height: 72px;
+  padding: 12px 18px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: space-between;
+  gap: 34px;
+  border-radius: 38px;
+  background: #292929;
+}
+
+.tabButton {
+  height: 46px;
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  border-radius: 24px;
+  background: #4a4a4a;
+  color: #f7f7f7;
+  font: inherit;
+  font-size: 25px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.tabButton:hover {
+  background: #5a5a5a;
+}
+
+.tabButton:focus-visible,
+.primaryButton:focus-visible,
+.buyButton:focus-visible,
+.accountButton:focus-visible,
+.transferInput:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 3px;
+}
+
+.activeTab,
+.activeTab:hover {
+  background: #ffbd17;
+  color: #050505;
+}
+
+.walletOverview {
+  display: flex;
+  width: min(810px, 88%);
+  margin: 48px auto 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 48px;
+}
+
+.tokenBalance {
+  min-width: 0;
+}
+
+.tokenLabelRow {
+  display: flex;
+  margin-bottom: 7px;
+  align-items: center;
+  gap: 8px;
+}
+
+.tokenIcon {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+}
+
+.tokenLabel {
+  color: #ffbd17;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.balanceLine {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.gmBalance {
+  color: #e7e2d7;
+  font-size: 58px;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.gmRate {
+  color: #ddd7cc;
+  font-size: 28px;
+  font-style: italic;
+  font-weight: 400;
+}
+
+.transferField {
+  display: flex;
+  width: 318px;
+  height: 47px;
+  margin-top: 9px;
+  padding: 0 26px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  border-radius: 24px;
+  background: #dedede;
+}
+
+.transferPrefix {
+  color: #444;
+  font-size: 35px;
+  font-weight: 400;
+}
+
+.transferInput {
+  width: 220px;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #444;
+  font: inherit;
+  font-size: 35px;
+  text-align: center;
+}
+
+.primaryButton,
+.buyButton {
+  height: 47px;
+  border: 0;
+  border-radius: 24px;
+  background: #0961c5;
+  color: #fff;
+  font: inherit;
+  font-size: 25px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 150ms ease, transform 150ms ease;
+}
+
+.primaryButton {
+  width: 260px;
+  flex: 0 0 260px;
+  margin-top: 64px;
+}
+
+.primaryButton:hover:not(:disabled),
+.buyButton:hover {
+  background: #1873dc;
+  transform: translateY(-1px);
+}
+
+.primaryButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.gameWallet {
+  width: min(810px, 88%);
+  margin: 73px auto 0;
+}
+
+.gameWalletTitle {
+  margin: 0;
+  padding-bottom: 13px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.5);
+  color: #fff;
+  font-size: 24px;
+  font-weight: 400;
+}
+
+.gameBalances {
+  display: grid;
+  padding-top: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 68px;
+}
+
+.gameCurrency {
+  min-width: 0;
+}
+
+.currencyLine {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  gap: 8px;
+  color: #fff;
+  font-size: 36px;
+  white-space: nowrap;
+}
+
+.currencyLine strong {
+  font-weight: 400;
+}
+
+.goldAmount {
+  color: #ffbd17;
+}
+
+.silverAmount {
+  color: #bdbdbd;
+}
+
+.coinIcon {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+}
+
+.silverCoin {
+  filter: grayscale(1) brightness(0.78) contrast(1.35);
+}
+
+.buyButton {
+  display: block;
+  width: 260px;
+  margin: 14px auto 0;
+}
+
+.coinStore {
+  margin-top: 38px;
+  padding: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 18px;
+  background: rgba(0, 0, 0, 0.34);
+}
+
+.coinStoreHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  color: #fff;
+  font-size: 20px;
+}
+
+.coinStoreHeader strong {
+  color: #ffbd17;
+  font-size: 24px;
+}
+
+.coinStoreControls {
+  display: grid;
+  margin-top: 18px;
+  grid-template-columns: 220px minmax(180px, 1fr) 130px;
+  align-items: end;
+  gap: 16px;
+}
+
+.coinStoreSwitch {
+  display: grid;
+  height: 44px;
+  padding: 5px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-radius: 24px;
+  background: #292929;
+}
+
+.coinStoreSwitchButton {
+  border: 0;
+  border-radius: 20px;
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.activeCoinStoreSwitchButton {
+  background: #ffbd17;
+  color: #050505;
+}
+
+.coinStoreAmount {
+  display: grid;
+  gap: 7px;
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.coinStoreInputWrap {
+  display: flex;
+  height: 44px;
+  padding: 0 16px;
+  align-items: center;
+  gap: 8px;
+  border-radius: 22px;
+  background: #dedede;
+  color: #444;
+}
+
+.coinStoreInputWrap input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #444;
+  font: inherit;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.coinStoreButton {
+  height: 44px;
+  border: 0;
+  border-radius: 22px;
+  background: #0961c5;
+  color: #fff;
+  font: inherit;
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.coinStoreButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.coinStoreSummary {
+  display: grid;
+  margin-top: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 14px;
+}
+
+.coinStoreSummary strong {
+  color: #ffbd17;
+}
+
+.coinStoreError,
+.coinStoreMessage {
+  margin-top: 14px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.coinStoreError {
+  color: #ff8a80;
+}
+
+.coinStoreMessage {
+  color: #8ce99a;
+}
+
+@media (max-width: 1050px) {
+  .gmBalance {
+    font-size: 46px;
+  }
+
+  .gmRate {
+    font-size: 22px;
+  }
+
+  .currencyLine {
+    font-size: 28px;
+  }
+
+  .gameBalances {
+    gap: 32px;
+  }
+
+  .coinStoreControls {
+    grid-template-columns: 1fr;
+  }
+
+  .coinStoreSummary {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .page {
+    padding: 0;
+  }
+
+  .canvas {
+    min-height: 100vh;
+    padding: 18px 18px 48px;
+    background-position: 42% center;
+  }
+
+  .brand {
+    gap: 12px;
+  }
+
+  .logo {
+    width: 52px;
+    height: 52px;
+  }
+
+  .brandName {
+    font-size: 25px;
+  }
+
+  .accountActions {
+    top: 25px;
+    right: 60px;
+  }
+
+  .tabs {
+    margin-top: 28px;
+  }
+
+  .tabTrack {
+    width: 100%;
+    min-height: 58px;
+    padding: 8px;
+    gap: 6px;
+  }
+
+  .tabButton {
+    height: 42px;
+    font-size: 14px;
+  }
+
+  .walletOverview {
+    width: 100%;
+    margin-top: 38px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 22px;
+  }
+
+  .tokenBalance {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .tokenLabel {
+    font-size: 20px;
+  }
+
+  .gmBalance {
+    font-size: 38px;
+  }
+
+  .gmRate {
+    font-size: 18px;
+  }
+
+  .transferField {
+    width: min(318px, 100%);
+  }
+
+  .primaryButton {
+    width: min(318px, 100%);
+    flex-basis: auto;
+    margin: 0 auto;
+  }
+
+  .gameWallet {
+    width: 100%;
+    margin-top: 52px;
+  }
+
+  .gameWalletTitle {
+    font-size: 21px;
+  }
+
+  .gameBalances {
+    grid-template-columns: 1fr;
+    gap: 28px;
+  }
+
+  .currencyLine {
+    justify-content: center;
+    font-size: 28px;
+  }
+
+  .buyButton {
+    width: min(260px, 100%);
+  }
+}
+
+@media (max-width: 390px) {
+  .canvas {
+    padding-inline: 14px;
+  }
+
+  .brandName {
+    font-size: 22px;
+  }
+
+  .gmBalance {
+    font-size: 32px;
+  }
+
+  .gmRate {
+    font-size: 15px;
+  }
+
+  .currencyLine {
+    font-size: 24px;
+  }
+}

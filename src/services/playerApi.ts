@@ -34,19 +34,64 @@ export type CoinbasePayoutQuote = {
   unitPriceUsd?: number;
 };
 
-export type CoinbaseCharge = {
+export type CoinbaseDeposit = {
   depositId: string;
-  chargeId: string;
-  chargeCode: string;
-  hostedUrl: string;
+  status: "pending" | "expired" | "completed" | "failed";
+  asset: CoinbaseAsset;
+  assetAmount: number;
+  receivedAssetAmount: number;
+  receivedUsd: number;
+  address: string;
+  addressId: string;
+  network: string;
   expiresAt: string;
-  supportedAssets: CoinbaseAsset[];
+  transactionHash: string | null;
+  transactionIds: string[];
+  createdAt?: string;
 } & CoinbaseDepositQuote;
+
+export type WalletTransaction = {
+  id: string;
+  type: "deposit" | "payout";
+  direction: "credit" | "debit";
+  provider: string;
+  status: string;
+  grossAmount: number;
+  feeAmount: number | null;
+  netAmount: number;
+  walletGains: number;
+  currency: string;
+  asset: string | null;
+  assetAmount: number | null;
+  transactionHash: string | null;
+  providerTransactionId: string | null;
+  createdAt: string;
+  processedAt: string | null;
+};
+
+export type GameCurrency = "gold" | "silver";
+
+export type WalletConversion = {
+  success: boolean;
+  currency: GameCurrency;
+  amountUsd: number;
+  gainsCost: number;
+  coinsToAdd: number;
+  ratePerUsd: number;
+  profile: {
+    id: string;
+    gains: number;
+    coins: number;
+    silver: number;
+    coinsTemporal: number;
+  };
+};
 
 const MOCK_PROFILE = {
   id: "ea24471a-559f-44b5-8fea-4b6491f9f4ea",
   gains: 80000,
   coins: 30000,
+  silver: 4500,
   coinsTemporal: 60000,
 };
 
@@ -70,6 +115,14 @@ const MOCK_REDEMPTIONS = [
 const COINBASE_MOCK_DEPOSIT_FEE = 2;
 const COINBASE_MOCK_PAYOUT_FEE = 4;
 const GAINS_PER_USD = 100;
+const GOLD_PER_USD = 100;
+const SILVER_PER_USD = 10000;
+const MOCK_COINBASE_PRICES: Record<CoinbaseAsset, number> = {
+  BTC: 50000,
+  ETH: 2500,
+  SOL: 100,
+};
+const MOCK_COINBASE_DEPOSITS = new Map<string, CoinbaseDeposit>();
 
 // same rounding as the backend (fee rounds up to the cent) so mock mode
 // doesn't show different numbers than the real API
@@ -258,6 +311,69 @@ class PlayerApiService {
 
     if (!r.ok) {
       throw new Error(data?.message || "Failed to fetch deposit transactions");
+    }
+
+    return data;
+  }
+
+  async getMyTransactions(
+    params: { status?: string; limit?: number; offset?: number } = {},
+  ): Promise<{
+    total: number;
+    transactions: WalletTransaction[];
+    limit: number;
+    offset: number;
+  }> {
+    const query = new URLSearchParams();
+
+    if (params.status) query.set("status", params.status);
+    if (typeof params.limit === "number") {
+      query.set("limit", String(params.limit));
+    }
+    if (typeof params.offset === "number") {
+      query.set("offset", String(params.offset));
+    }
+
+    if (USE_MOCK_API) {
+      const transactions = MOCK_REDEMPTIONS.map((redemption) => ({
+        id: redemption.redemptionId,
+        type: "payout" as const,
+        direction: "debit" as const,
+        provider: "mock",
+        status: redemption.status,
+        grossAmount: Number(redemption.amount),
+        feeAmount: null,
+        netAmount: Number(redemption.amount),
+        walletGains: Number(redemption.amount) * GAINS_PER_USD,
+        currency: redemption.currency,
+        asset: null,
+        assetAmount: null,
+        transactionHash: null,
+        providerTransactionId: null,
+        createdAt: redemption.requestedAt,
+        processedAt: null,
+      }));
+
+      return {
+        total: transactions.length,
+        transactions,
+        limit: params.limit ?? 50,
+        offset: params.offset ?? 0,
+      };
+    }
+
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    const r = await fetch(
+      `${this.baseUrl}/api/v2/transactions/my${suffix}`,
+      {
+        method: "GET",
+        headers: this.headers(),
+      },
+    );
+    const data = await this.readResponse(r);
+
+    if (!r.ok) {
+      throw new Error(data?.message || "Failed to fetch transaction history");
     }
 
     return data;
@@ -567,30 +683,48 @@ class PlayerApiService {
     return data as CoinbasePayoutQuote;
   }
 
-  async createCoinbaseCharge(params: {
+  async createCoinbaseDeposit(params: {
     amountUsd: number;
-  }): Promise<CoinbaseCharge> {
+    asset: CoinbaseAsset;
+  }): Promise<CoinbaseDeposit> {
     if (USE_MOCK_API) {
       const quote = mockCoinbaseQuote(
         params.amountUsd,
         COINBASE_MOCK_DEPOSIT_FEE,
       );
-
-      return {
+      const depositId = `mock-deposit-${Date.now()}`;
+      const deposit: CoinbaseDeposit = {
         ...quote,
-        depositId: `mock-deposit-${Date.now()}`,
-        chargeId: `mock-charge-${Date.now()}`,
-        chargeCode: "MOCKCODE",
-        hostedUrl: "https://commerce.coinbase.com/charges/MOCKCODE",
-        expiresAt: new Date(Date.now() + 3600000).toISOString(),
-        supportedAssets: ["BTC", "ETH", "SOL"],
-      } as CoinbaseCharge;
+        depositId,
+        status: "pending",
+        asset: params.asset,
+        assetAmount: Number(
+          (params.amountUsd / MOCK_COINBASE_PRICES[params.asset]).toFixed(8),
+        ),
+        receivedAssetAmount: 0,
+        receivedUsd: 0,
+        address: `mock_${params.asset.toLowerCase()}_receive_address`,
+        addressId: `mock-address-${Date.now()}`,
+        network:
+          params.asset === "BTC"
+            ? "bitcoin"
+            : params.asset === "ETH"
+              ? "ethereum"
+              : "solana",
+        expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+        transactionHash: null,
+        transactionIds: [],
+        createdAt: new Date().toISOString(),
+      };
+
+      MOCK_COINBASE_DEPOSITS.set(depositId, deposit);
+      return deposit;
     }
 
-    const r = await fetch(`${this.baseUrl}/api/v2/coinbase/charges`, {
+    const r = await fetch(`${this.baseUrl}/api/v2/coinbase/deposits`, {
       method: "POST",
       headers: this.headers(),
-      body: JSON.stringify({ amountUsd: params.amountUsd }),
+      body: JSON.stringify(params),
     });
 
     const data = await this.readResponse(r);
@@ -599,7 +733,32 @@ class PlayerApiService {
         data?.message || data?.error || "Failed to create crypto deposit",
       );
     }
-    return data as CoinbaseCharge;
+    return data as CoinbaseDeposit;
+  }
+
+  async getCoinbaseDeposit(depositId: string): Promise<CoinbaseDeposit> {
+    if (USE_MOCK_API) {
+      const deposit = MOCK_COINBASE_DEPOSITS.get(depositId);
+
+      if (!deposit) throw new Error("Crypto deposit not found");
+      return deposit;
+    }
+
+    const r = await fetch(
+      `${this.baseUrl}/api/v2/coinbase/deposits/${depositId}?refresh=true`,
+      {
+        method: "GET",
+        headers: this.headers(),
+      },
+    );
+
+    const data = await this.readResponse(r);
+    if (!r.ok) {
+      throw new Error(
+        data?.message || data?.error || "Failed to check crypto deposit",
+      );
+    }
+    return data as CoinbaseDeposit;
   }
 
   async createCoinbasePayout(params: {
@@ -686,6 +845,54 @@ class PlayerApiService {
     if (!r.ok)
       throw new Error(data?.message || "Failed to get onboarding link");
     return data;
+  }
+
+  async convertWalletCurrency(params: {
+    amountUsd: number;
+    currency: GameCurrency;
+  }): Promise<WalletConversion> {
+    if (USE_MOCK_API) {
+      const rate =
+        params.currency === "gold" ? GOLD_PER_USD : SILVER_PER_USD;
+      const gainsCost = Number((params.amountUsd * GAINS_PER_USD).toFixed(2));
+      const coinsToAdd = Math.floor(params.amountUsd * rate);
+
+      if (MOCK_PROFILE.gains < gainsCost) {
+        throw new Error("Insufficient wallet balance.");
+      }
+
+      MOCK_PROFILE.gains = Number((MOCK_PROFILE.gains - gainsCost).toFixed(2));
+
+      if (params.currency === "gold") {
+        MOCK_PROFILE.coins += coinsToAdd;
+      } else {
+        MOCK_PROFILE.silver += coinsToAdd;
+      }
+
+      return {
+        success: true,
+        currency: params.currency,
+        amountUsd: Number(params.amountUsd.toFixed(2)),
+        gainsCost,
+        coinsToAdd,
+        ratePerUsd: rate,
+        profile: { ...MOCK_PROFILE },
+      };
+    }
+
+    const r = await fetch(`${this.baseUrl}/api/v2/wallet/convert`, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify(params),
+    });
+
+    const data = await this.readResponse(r);
+    if (!r.ok) {
+      throw new Error(
+        data?.message || data?.error || "Failed to convert wallet balance",
+      );
+    }
+    return data as WalletConversion;
   }
 
   async register(params: {

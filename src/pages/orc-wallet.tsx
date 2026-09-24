@@ -1,41 +1,38 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { Elements } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
 import {
   playerApi,
   type StripePayoutQuote,
   type CoinbaseAsset,
-  type CoinbaseCharge,
+  type CoinbaseDeposit,
   type CoinbaseDepositQuote,
   type CoinbasePayoutQuote,
+  type GameCurrency,
+  type WalletTransaction,
 } from "@/services/playerApi";
 import AddCashStripeFlow from "@/components/wallet/AddCashStripeFlow";
 import AddCashPayPalFlow from "@/components/wallet/AddCashPayPalFlow";
-import { FaUniversity, FaGlobeAmericas, FaPaypal } from "react-icons/fa";
+import styles from "@/styles/OrcWallet.module.css";
+import {
+  FaUniversity,
+  FaGlobeAmericas,
+  FaPaypal,
+  FaRegCopy,
+} from "react-icons/fa";
 import { SiCashapp, SiCoinbase } from "react-icons/si";
 import { US } from "country-flag-icons/react/3x2";
 import countries from "i18n-iso-countries";
 import enLocale from "i18n-iso-countries/langs/en.json";
 countries.registerLocale(enLocale);
-type Profile = { gains: number; coins: number; coinsTemporal: number };
-type RedemptionRecord = {
-  redemptionId?: string;
-  amount?: number | string;
-  currency?: string;
-  status?: string;
-  requestedAt?: string;
-};
-type DepositRecord = {
-  id?: string;
-  provider?: string;
-  providerOrderId?: string;
-  providerTransactionId?: string;
-  amount?: number | string;
-  currency?: string;
-  status?: string;
-  createdAt?: string;
+type Profile = {
+  gains: number;
+  coins: number;
+  silver: number;
+  coinsTemporal: number;
 };
 type TransactionItem = {
   id: string;
@@ -123,6 +120,11 @@ type IdentityFormData = {
 };
 
 const USD_PER_GM = 0.01;
+const GM_PER_USD = 100;
+const GOLD_PER_USD = Number(process.env.NEXT_PUBLIC_WALLET_GOLD_PER_USD || 100);
+const SILVER_PER_USD = Number(
+  process.env.NEXT_PUBLIC_WALLET_SILVER_PER_USD || 10000,
+);
 const USE_MOCK_API = process.env.NEXT_PUBLIC_USE_MOCK_API === "true";
 
 const stripePromise = loadStripe(
@@ -148,6 +150,32 @@ const depositLabel = (status?: string) =>
   !status || DEPOSIT_SETTLED.includes(status.toLowerCase())
     ? "Cash Added"
     : `Cash Added (${status.toUpperCase()})`;
+
+const transactionItem = (transaction: WalletTransaction): TransactionItem => {
+  const provider =
+    transaction.provider.charAt(0).toUpperCase() +
+    transaction.provider.slice(1);
+  const asset = transaction.asset ? ` (${transaction.asset})` : "";
+  const fee =
+    Number(transaction.feeAmount) > 0
+      ? ` · $${Number(transaction.feeAmount).toFixed(2)} fee`
+      : "";
+  const amount =
+    transaction.direction === "credit"
+      ? transaction.netAmount
+      : transaction.grossAmount;
+
+  return {
+    id: transaction.id,
+    label:
+      transaction.direction === "credit"
+        ? depositLabel(transaction.status)
+        : `Cash ${transaction.status.toUpperCase()}`,
+    source: `${provider}${asset}${fee}`,
+    amountLabel: `${transaction.direction === "credit" ? "+" : "-"}$${Math.abs(amount).toFixed(2)}`,
+    kind: transaction.direction === "credit" ? "pos" : "neg",
+  };
+};
 
 type FeeRow = { label: string; value: string; negative?: boolean };
 
@@ -246,9 +274,13 @@ export default function BetBurn() {
   >(null);
   const [coinbaseDepositQuote, setCoinbaseDepositQuote] =
     useState<CoinbaseDepositQuote | null>(null);
-  const [coinbaseCharge, setCoinbaseCharge] = useState<CoinbaseCharge | null>(
-    null,
-  );
+  const [coinbaseDeposit, setCoinbaseDeposit] =
+    useState<CoinbaseDeposit | null>(null);
+  const [coinbaseDepositAsset, setCoinbaseDepositAsset] =
+    useState<CoinbaseAsset>("BTC");
+  const [copiedDepositField, setCopiedDepositField] = useState<
+    "amount" | "address" | null
+  >(null);
   const [addCashErr, setAddCashErr] = useState<string | null>(null);
   const [addCashLoading, setAddCashLoading] = useState(false);
   const [transactions, setTransactions] = useState<TransactionItem[]>([]);
@@ -329,75 +361,27 @@ export default function BetBurn() {
     useState<CoinbasePayoutQuote | null>(null);
   const [coinbaseAsset, setCoinbaseAsset] = useState<CoinbaseAsset>("BTC");
   const [coinbaseAddress, setCoinbaseAddress] = useState<string>("");
+  const [coinStoreCurrency, setCoinStoreCurrency] =
+    useState<GameCurrency>("gold");
+  const [coinStoreAmount, setCoinStoreAmount] = useState<string>("5.00");
+  const [coinStoreLoading, setCoinStoreLoading] = useState(false);
+  const [coinStoreErr, setCoinStoreErr] = useState<string | null>(null);
+  const [coinStoreMessage, setCoinStoreMessage] = useState<string | null>(null);
 
   const mapProfile = (p: Partial<Profile>): Profile => ({
     gains: Number(p.gains) || 0,
     coins: Number(p.coins) || 0,
+    silver: Number(p.silver) || 0,
     coinsTemporal: Number(p.coinsTemporal) || 0,
   });
 
   const refreshTransactions = async () => {
     try {
-      const [redemptionsResult, depositsResult] = await Promise.allSettled([
-        playerApi.getMyRedemptions({
-          limit: 50,
-          offset: 0,
-        }),
-        playerApi.getMyDeposits({
-          limit: 50,
-          offset: 0,
-        }),
-      ]);
-
-      const redemptionsData =
-        redemptionsResult.status === "fulfilled"
-          ? redemptionsResult.value
-          : null;
-      const depositsData =
-        depositsResult.status === "fulfilled" ? depositsResult.value : null;
-
-      const redemptions = Array.isArray(redemptionsData?.redemptions)
-        ? (redemptionsData.redemptions as RedemptionRecord[])
-        : [];
-
-      const deposits = Array.isArray(depositsData?.deposits)
-        ? (depositsData.deposits as DepositRecord[])
-        : [];
-
-      const mappedRedemptions = redemptions.map((redemption, index) => {
-        const numericAmount = Number(redemption.amount || 0);
-        const amount = Number.isFinite(numericAmount) ? numericAmount : 0;
-
-        const statusLabel = redemption.status
-          ? redemption.status.toUpperCase()
-          : "REQUEST";
-
-        return {
-          id: redemption.redemptionId || `redemption-${index}`,
-          label: `Cash ${statusLabel}`,
-          source: "Redemption",
-          amountLabel: `-$${Math.abs(amount).toFixed(2)}`,
-          kind: "neg",
-        } as TransactionItem;
+      const history = await playerApi.getMyTransactions({
+        limit: 50,
+        offset: 0,
       });
-
-      const mappedDeposits = deposits.map((deposit, index) => {
-        const numericAmount = Number(deposit.amount || 0);
-        const amount = Number.isFinite(numericAmount) ? numericAmount : 0;
-
-        return {
-          id: deposit.id || deposit.providerTransactionId || `deposit-${index}`,
-          label: depositLabel(deposit.status),
-          source:
-            deposit.provider?.toLowerCase() === "paypal"
-              ? "PayPal"
-              : deposit.provider || "Deposit",
-          amountLabel: `+$${Math.abs(amount).toFixed(2)}`,
-          kind: "pos",
-        } as TransactionItem;
-      });
-
-      setTransactions([...mappedDeposits, ...mappedRedemptions]);
+      setTransactions(history.transactions.map(transactionItem));
     } catch {
       // Keep the existing transaction list if refresh fails.
     }
@@ -444,12 +428,10 @@ export default function BetBurn() {
     try {
       // allSettled, not all - a failing history call shouldn't take the
       // balance down with it
-      const [profileResult, redemptionsResult, depositsResult] =
-        await Promise.allSettled([
-          playerApi.getMyProfile(),
-          playerApi.getMyRedemptions({ limit: 50, offset: 0 }),
-          playerApi.getMyDeposits({ limit: 50, offset: 0 }),
-        ]);
+      const [profileResult, historyResult] = await Promise.allSettled([
+        playerApi.getMyProfile(),
+        playerApi.getMyTransactions({ limit: 50, offset: 0 }),
+      ]);
 
       if (profileResult.status === "fulfilled") {
         const p = profileResult.value as Partial<Profile>;
@@ -460,70 +442,19 @@ export default function BetBurn() {
         );
       }
 
-      const historyFailure =
-        redemptionsResult.status === "rejected"
-          ? redemptionsResult.reason
-          : depositsResult.status === "rejected"
-            ? depositsResult.reason
-            : null;
-
-      if (historyFailure) {
+      if (historyResult.status === "rejected") {
         setTxErr(
-          toErrorMessage(historyFailure, "Failed to load transaction history"),
+          toErrorMessage(
+            historyResult.reason,
+            "Failed to load transaction history",
+          ),
         );
       }
 
-      const redemptionsData =
-        redemptionsResult.status === "fulfilled"
-          ? redemptionsResult.value
-          : null;
-      const depositsData =
-        depositsResult.status === "fulfilled" ? depositsResult.value : null;
-
-      const redemptions = Array.isArray(redemptionsData?.redemptions)
-        ? (redemptionsData.redemptions as RedemptionRecord[])
-        : [];
-
-      const mapped = redemptions.map((redemption, index) => {
-        const numericAmount = Number(redemption.amount || 0);
-        const amount = Number.isFinite(numericAmount) ? numericAmount : 0;
-        const signedAmount = `-$${Math.abs(amount).toFixed(2)}`;
-        const statusLabel = redemption.status
-          ? redemption.status.toUpperCase()
-          : "REQUEST";
-
-        return {
-          id: redemption.redemptionId || `tx-${index}`,
-          label: `Cash ${statusLabel}`,
-          source: "Redemption",
-          amountLabel: signedAmount,
-          kind: "neg",
-        } as TransactionItem;
-      });
-
-      const deposits = Array.isArray(depositsData?.deposits)
-        ? (depositsData.deposits as DepositRecord[])
-        : [];
-
-      const mappedDeposits = deposits.map((deposit, index) => {
-        const numericAmount = Number(deposit.amount || 0);
-        const amount = Number.isFinite(numericAmount) ? numericAmount : 0;
-
-        const provider =
-          deposit.provider?.toLowerCase() === "paypal"
-            ? "PayPal"
-            : deposit.provider || "Deposit";
-
-        return {
-          id: deposit.id || deposit.providerTransactionId || `deposit-${index}`,
-          label: depositLabel(deposit.status),
-          source: provider,
-          amountLabel: `+$${Math.abs(amount).toFixed(2)}`,
-          kind: "pos",
-        } as TransactionItem;
-      });
-
-      const savedTransactions = [...mappedDeposits, ...mapped];
+      const savedTransactions =
+        historyResult.status === "fulfilled"
+          ? historyResult.value.transactions.map(transactionItem)
+          : [];
 
       setTransactions((prev) => {
         const optimistic = prev.filter(
@@ -591,7 +522,7 @@ export default function BetBurn() {
       setAddCashStage("entry");
       setStripeClientSecret(null);
       setStripePaymentIntentId(null);
-      setCoinbaseCharge(null);
+      setCoinbaseDeposit(null);
       setAddCashErr(null);
       setAddCashLoading(false);
     }
@@ -602,6 +533,12 @@ export default function BetBurn() {
       setTransferSubmitting(false);
     }
   }, [tab]);
+
+  useEffect(() => {
+    if (!profile || transferAmount !== "0.00") return;
+
+    setTransferAmount((profile.gains * USD_PER_GM).toFixed(2));
+  }, [profile, transferAmount]);
 
   const sanitizeUsdInput = (raw: string) => {
     const cleaned = raw.replace(/[^\d.]/g, "");
@@ -620,6 +557,24 @@ export default function BetBurn() {
   };
 
   const parsedAddCashAmount = Number(addCashAmount || "0");
+  const maxTransferUsd = profile
+    ? Number((profile.gains * USD_PER_GM).toFixed(2))
+    : 0;
+  const parsedCoinStoreAmount = Number(coinStoreAmount || "0");
+  const hasValidCoinStoreAmount =
+    Number.isFinite(parsedCoinStoreAmount) &&
+    parsedCoinStoreAmount > 0 &&
+    parsedCoinStoreAmount <= maxTransferUsd;
+  const coinStoreRate =
+    coinStoreCurrency === "gold" ? GOLD_PER_USD : SILVER_PER_USD;
+  const coinStoreCoinsToAdd = hasValidCoinStoreAmount
+    ? Math.floor(parsedCoinStoreAmount * coinStoreRate)
+    : 0;
+  const coinStoreGmCost = hasValidCoinStoreAmount
+    ? Number((parsedCoinStoreAmount * GM_PER_USD).toFixed(2))
+    : 0;
+  const coinStoreLabel =
+    coinStoreCurrency === "gold" ? "Gold Coins" : "Silver Coins";
   const selectedPaymentLabel =
     addCashMethod === "bank_transfer"
       ? "Bank Transfer"
@@ -628,9 +583,6 @@ export default function BetBurn() {
         : addCashMethod === "paypal"
           ? "PayPal"
           : "Coinbase";
-  const maxTransferUsd = profile
-    ? Number((profile.gains * USD_PER_GM).toFixed(2))
-    : 0;
   const parsedTransferAmount = Number(transferAmount || "0");
   const hasValidTransferAmount =
     Number.isFinite(parsedTransferAmount) &&
@@ -703,6 +655,56 @@ export default function BetBurn() {
     void previewCoinbaseDepositFee();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addCashMethod, parsedAddCashAmount]);
+
+  useEffect(() => {
+    if (
+      addCashStage !== "coinbase-checkout" ||
+      !coinbaseDeposit ||
+      coinbaseDeposit.status === "completed"
+    ) {
+      return;
+    }
+
+    let stopped = false;
+    let timer: number | undefined;
+
+    const checkDeposit = async () => {
+      try {
+        const latest = await playerApi.getCoinbaseDeposit(
+          coinbaseDeposit.depositId,
+        );
+
+        if (stopped) return;
+        setCoinbaseDeposit(latest);
+        setAddCashErr(null);
+
+        if (latest.status === "completed") {
+          setAddCashOutcome("credited");
+          setAddCashStage("success");
+          void loadWalletData();
+          return;
+        }
+      } catch (error: unknown) {
+        if (!stopped) {
+          setAddCashErr(
+            error instanceof Error
+              ? error.message
+              : "Unable to check this deposit yet.",
+          );
+        }
+      }
+
+      if (!stopped) timer = window.setTimeout(checkDeposit, 5000);
+    };
+
+    timer = window.setTimeout(checkDeposit, 3000);
+
+    return () => {
+      stopped = true;
+      if (timer) window.clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addCashStage, coinbaseDeposit?.depositId, coinbaseDeposit?.status]);
 
   // quote the payout fee when the withdraw form opens and again on every
   // asset switch, so the 4% is on screen before they commit
@@ -809,6 +811,40 @@ export default function BetBurn() {
         select: "official",
       }) || countryCode
     );
+  };
+
+  const convertWalletToCoins = async () => {
+    if (!hasValidCoinStoreAmount) {
+      setCoinStoreErr(
+        `Enter an amount greater than $0.00 and up to $${maxTransferUsd.toFixed(2)}.`,
+      );
+      return;
+    }
+
+    setCoinStoreLoading(true);
+    setCoinStoreErr(null);
+    setCoinStoreMessage(null);
+
+    try {
+      const result = await playerApi.convertWalletCurrency({
+        amountUsd: parsedCoinStoreAmount,
+        currency: coinStoreCurrency,
+      });
+
+      setProfile(mapProfile(result.profile));
+      setCoinStoreMessage(
+        `Added ${result.coinsToAdd.toLocaleString()} ${coinStoreLabel}.`,
+      );
+      setCoinStoreAmount("5.00");
+    } catch (error: unknown) {
+      setCoinStoreErr(
+        error instanceof Error
+          ? error.message
+          : "Unable to convert wallet balance.",
+      );
+    } finally {
+      setCoinStoreLoading(false);
+    }
   };
 
   const startStripeAddCashFlow = async () => {
@@ -926,20 +962,19 @@ export default function BetBurn() {
     setAddCashErr(null);
 
     try {
-      // charge response already has the fee breakdown on it, no need for a
-      // separate quote call here
-      const charge = await playerApi.createCoinbaseCharge({
+      const deposit = await playerApi.createCoinbaseDeposit({
         amountUsd: parsedAddCashAmount,
+        asset: coinbaseDepositAsset,
       });
 
-      setCoinbaseCharge(charge);
+      setCoinbaseDeposit(deposit);
       setCoinbaseDepositQuote({
-        grossAmount: charge.grossAmount,
-        feeAmount: charge.feeAmount,
-        netAmount: charge.netAmount,
-        feePercent: charge.feePercent,
-        gains: charge.gains,
-        currency: charge.currency,
+        grossAmount: deposit.grossAmount,
+        feeAmount: deposit.feeAmount,
+        netAmount: deposit.netAmount,
+        feePercent: deposit.feePercent,
+        gains: deposit.gains,
+        currency: deposit.currency,
       });
       setAddCashStage("coinbase-checkout");
     } catch (e: unknown) {
@@ -951,7 +986,20 @@ export default function BetBurn() {
     }
   };
 
-  // shows the 2% before they actually create a charge
+  const copyDepositValue = async (
+    field: "amount" | "address",
+    value: string,
+  ) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedDepositField(field);
+      window.setTimeout(() => setCopiedDepositField(null), 1500);
+    } catch {
+      setAddCashErr("Unable to copy. Select the value and copy it manually.");
+    }
+  };
+
+  // Show the fee before creating a receive address.
   const previewCoinbaseDepositFee = async () => {
     if (!Number.isFinite(parsedAddCashAmount) || parsedAddCashAmount < 1) {
       setCoinbaseDepositQuote(null);
@@ -965,7 +1013,7 @@ export default function BetBurn() {
         }),
       );
     } catch {
-      // don't block the flow on a failed preview, the charge call re-quotes
+      // The deposit request prices it again if the preview is stale.
       setCoinbaseDepositQuote(null);
     }
   };
@@ -1261,19 +1309,25 @@ export default function BetBurn() {
   };
 
   return (
-    <div style={page}>
-      <div style={bg}>
-        {/* Header (anchored top-left) */}
-        <div style={headerBar}>
-          <div style={brandRow}>
-            <img src="/logo.png" alt="ORC Logo" style={logoImg} />
-            <div style={brandText}>ORC Wallet</div>
+    <main className={styles.page}>
+      <div className={styles.canvas}>
+        <header className={styles.header}>
+          <div className={styles.brand}>
+            <Image
+              src="/logo.png"
+              alt="ORC Logo"
+              width={74}
+              height={74}
+              className={styles.logo}
+              priority
+            />
+            <div className={styles.brandName}>ORC Wallet</div>
           </div>
           {isAuthenticated && (
-            <div style={accountActions}>
+            <div className={styles.accountActions}>
               <button
                 type="button"
-                style={accountIconButton}
+                className={styles.accountButton}
                 onClick={handleLogout}
                 aria-label="Log out"
                 title="Log out"
@@ -1289,14 +1343,14 @@ export default function BetBurn() {
                 </svg>
               </button>
 
-              <span style={accountDivider} />
+              <span className={styles.accountDivider} />
             </div>
           )}
-        </div>
+        </header>
 
         {!isAuthenticated ? (
           /* ── Login form ── */
-          <div style={centerLane}>
+          <div className={styles.content}>
             <div style={loginPanel}>
               <div style={loginTitle}>Sign In</div>
               <form onSubmit={handleLogin} style={loginForm} noValidate>
@@ -1346,54 +1400,53 @@ export default function BetBurn() {
           </div>
         ) : (
           /* ── Authenticated: tabs + content ── */
-          <div style={centerLane}>
-            {/* Tabs (centered) */}
-            <div style={tabsWrap}>
-              <div style={tabsPill}>
+          <div className={styles.content}>
+            <nav className={styles.tabs} aria-label="Wallet sections">
+              <div className={styles.tabTrack}>
                 {(["wallet", "add cash", "transactions"] as TabKey[]).map(
                   (t) => (
                     <button
                       key={t}
                       onClick={() => setTab(t)}
-                      style={{
-                        ...tabBtn,
-                        background: tab === t ? "#FFBD17" : "#464646",
-                        color: tab === t ? "#000" : "#fff",
-                      }}
+                      className={`${styles.tabButton} ${tab === t ? styles.activeTab : ""}`}
                       type="button"
+                      aria-current={tab === t ? "page" : undefined}
                     >
                       {TAB_LABELS[t]}
                     </button>
                   ),
                 )}
               </div>
-            </div>
+            </nav>
 
             {/* Content panels */}
             {tab === "wallet" && (
               <>
                 {transferStage === "none" && (
-                  <div style={walletRow}>
-                    <div style={walletInfo}>
-                      <div style={tokenLabelRow}>
-                        <img
+                  <>
+                    <section className={styles.walletOverview}>
+                      <div className={styles.tokenBalance}>
+                      <div className={styles.tokenLabelRow}>
+                        <Image
                           src="/assets/gimme-token.png"
                           alt="Gimmie Token"
-                          style={tokenIcon}
+                          width={40}
+                          height={40}
+                          className={styles.tokenIcon}
                         />
-                        <span style={tokenLabel}>Gimmie Tokens</span>
+                        <span className={styles.tokenLabel}>Gimmie Tokens</span>
                       </div>
 
-                      <div style={balanceLine}>
-                        <span style={gm}>
+                      <div className={styles.balanceLine}>
+                        <span className={styles.gmBalance}>
                           {profile ? profile.gains.toFixed(2) : "—"} GM
                         </span>
 
-                        <span style={gmRate}>$0.01/GM</span>
+                        <span className={styles.gmRate}>$0.01/GM</span>
                       </div>
 
-                      <div style={transferAmountWrap}>
-                        <span style={transferAmountPrefix}>$</span>
+                      <div className={styles.transferField}>
+                        <span className={styles.transferPrefix}>$</span>
 
                         <input
                           value={transferAmount}
@@ -1405,7 +1458,7 @@ export default function BetBurn() {
                           }}
                           inputMode="decimal"
                           pattern="\\d*(\\.\\d{0,2})?"
-                          style={transferAmountInput}
+                          className={styles.transferInput}
                           aria-label="Transfer amount in USD"
                         />
                       </div>
@@ -1426,22 +1479,170 @@ export default function BetBurn() {
                           {err}
                         </div>
                       )}
-                    </div>
+                      </div>
 
-                    <button
-                      style={primary}
-                      type="button"
-                      onClick={() => {
-                        setTransferSubmitErr(null);
-                        if (hasValidTransferAmount) {
-                          setTransferStage("method");
-                        }
-                      }}
-                      disabled={!hasValidTransferAmount}
-                    >
-                      Transfer
-                    </button>
-                  </div>
+                      <button
+                        className={styles.primaryButton}
+                        type="button"
+                        onClick={() => {
+                          setTransferSubmitErr(null);
+                          if (hasValidTransferAmount) {
+                            setTransferStage("method");
+                          }
+                        }}
+                        disabled={!hasValidTransferAmount}
+                      >
+                        Transfer
+                      </button>
+                    </section>
+
+                    <section className={styles.gameWallet}>
+                      <h2 className={styles.gameWalletTitle}>In-game Wallet:</h2>
+
+                      <div className={styles.gameBalances}>
+                        <div className={styles.gameCurrency}>
+                          <div className={styles.currencyLine}>
+                            <span>Gold Coins:</span>
+                            <strong className={styles.goldAmount}>
+                              {profile ? Math.floor(profile.coins).toLocaleString() : "—"}
+                            </strong>
+                            <Image
+                              src="/assets/coin.svg"
+                              alt="Gold coin"
+                              width={40}
+                              height={40}
+                              className={styles.coinIcon}
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            className={styles.buyButton}
+                            onClick={() => {
+                              setCoinStoreCurrency("gold");
+                              setCoinStoreErr(null);
+                              setCoinStoreMessage(null);
+                            }}
+                          >
+                            Buy More
+                          </button>
+                        </div>
+
+                        <div className={styles.gameCurrency}>
+                          <div className={styles.currencyLine}>
+                            <span>Silver Coins:</span>
+                            <strong className={styles.silverAmount}>
+                              {profile ? Math.floor(profile.silver).toLocaleString() : "—"}
+                            </strong>
+                            <Image
+                              src="/assets/coin.svg"
+                              alt="Silver coin"
+                              width={40}
+                              height={40}
+                              className={`${styles.coinIcon} ${styles.silverCoin}`}
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            className={styles.buyButton}
+                            onClick={() => {
+                              setCoinStoreCurrency("silver");
+                              setCoinStoreErr(null);
+                              setCoinStoreMessage(null);
+                            }}
+                          >
+                            Buy More
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className={styles.coinStore}>
+                        <div className={styles.coinStoreHeader}>
+                          <span>Convert wallet balance</span>
+                          <strong>{coinStoreLabel}</strong>
+                        </div>
+
+                        <div className={styles.coinStoreControls}>
+                          <div className={styles.coinStoreSwitch}>
+                            {(["gold", "silver"] as GameCurrency[]).map(
+                              (currency) => (
+                                <button
+                                  key={currency}
+                                  type="button"
+                                  className={`${styles.coinStoreSwitchButton} ${
+                                    coinStoreCurrency === currency
+                                      ? styles.activeCoinStoreSwitchButton
+                                      : ""
+                                  }`}
+                                  onClick={() => {
+                                    setCoinStoreCurrency(currency);
+                                    setCoinStoreErr(null);
+                                    setCoinStoreMessage(null);
+                                  }}
+                                >
+                                  {currency === "gold" ? "Gold" : "Silver"}
+                                </button>
+                              ),
+                            )}
+                          </div>
+
+                          <label className={styles.coinStoreAmount}>
+                            <span>Spend</span>
+                            <div className={styles.coinStoreInputWrap}>
+                              <span>$</span>
+                              <input
+                                value={coinStoreAmount}
+                                onChange={(event) => {
+                                  setCoinStoreAmount(
+                                    sanitizeUsdInput(event.target.value),
+                                  );
+                                  setCoinStoreErr(null);
+                                  setCoinStoreMessage(null);
+                                }}
+                                inputMode="decimal"
+                                pattern="\\d*(\\.\\d{0,2})?"
+                              />
+                            </div>
+                          </label>
+
+                          <button
+                            type="button"
+                            className={styles.coinStoreButton}
+                            disabled={
+                              coinStoreLoading || !hasValidCoinStoreAmount
+                            }
+                            onClick={() => void convertWalletToCoins()}
+                          >
+                            {coinStoreLoading ? "Buying..." : "Buy"}
+                          </button>
+                        </div>
+
+                        <div className={styles.coinStoreSummary}>
+                          <span>
+                            Cost: {coinStoreGmCost.toLocaleString()} GM
+                          </span>
+                          <span>
+                            Rate: {coinStoreRate.toLocaleString()} / $1
+                          </span>
+                          <strong>
+                            You get: {coinStoreCoinsToAdd.toLocaleString()}{" "}
+                            {coinStoreCurrency === "gold" ? "gold" : "silver"}
+                          </strong>
+                        </div>
+
+                        {coinStoreErr && (
+                          <div className={styles.coinStoreError}>
+                            {coinStoreErr}
+                          </div>
+                        )}
+
+                        {coinStoreMessage && (
+                          <div className={styles.coinStoreMessage}>
+                            {coinStoreMessage}
+                          </div>
+                        )}
+                      </div>
+                    </section>
+                  </>
                 )}
 
                 {transferStage === "tax-classification" && (
@@ -3186,29 +3387,58 @@ export default function BetBurn() {
                       </button>
                     </div>
 
-                    {addCashMethod === "coinbase" && coinbaseDepositQuote && (
-                      <CryptoFeeBreakdown
-                        dark
-                        rows={[
-                          {
-                            label: "You pay",
-                            value: `$${coinbaseDepositQuote.grossAmount.toFixed(2)}`,
-                          },
-                          {
-                            label: `Crypto deposit fee (${coinbaseDepositQuote.feePercent}%)`,
-                            value: `-$${coinbaseDepositQuote.feeAmount.toFixed(2)}`,
-                            negative: true,
-                          },
-                        ]}
-                        totalLabel="Credited to wallet"
-                        totalValue={`$${coinbaseDepositQuote.netAmount.toFixed(2)}`}
-                        footRows={[
-                          {
-                            label: "You receive",
-                            value: `${coinbaseDepositQuote.gains.toLocaleString()} GM`,
-                          },
-                        ]}
-                      />
+                    {addCashMethod === "coinbase" && (
+                      <>
+                        <div style={depositAssetPicker}>
+                          {(["BTC", "ETH", "SOL"] as CoinbaseAsset[]).map(
+                            (asset) => (
+                              <button
+                                key={asset}
+                                type="button"
+                                style={{
+                                  ...depositAssetButton,
+                                  borderColor:
+                                    coinbaseDepositAsset === asset
+                                      ? "#FFBD17"
+                                      : "rgba(255,255,255,0.35)",
+                                  color:
+                                    coinbaseDepositAsset === asset
+                                      ? "#FFBD17"
+                                      : "rgba(255,255,255,0.75)",
+                                }}
+                                onClick={() => setCoinbaseDepositAsset(asset)}
+                              >
+                                {asset}
+                              </button>
+                            ),
+                          )}
+                        </div>
+
+                        {coinbaseDepositQuote && (
+                          <CryptoFeeBreakdown
+                            dark
+                            rows={[
+                              {
+                                label: "You pay",
+                                value: `$${coinbaseDepositQuote.grossAmount.toFixed(2)}`,
+                              },
+                              {
+                                label: `Crypto deposit fee (${coinbaseDepositQuote.feePercent}%)`,
+                                value: `-$${coinbaseDepositQuote.feeAmount.toFixed(2)}`,
+                                negative: true,
+                              },
+                            ]}
+                            totalLabel="Credited to wallet"
+                            totalValue={`$${coinbaseDepositQuote.netAmount.toFixed(2)}`}
+                            footRows={[
+                              {
+                                label: "You receive",
+                                value: `${coinbaseDepositQuote.gains.toLocaleString()} GM`,
+                              },
+                            ]}
+                          />
+                        )}
+                      </>
                     )}
 
                     {addCashErr && <div style={addCashError}>{addCashErr}</div>}
@@ -3299,29 +3529,56 @@ export default function BetBurn() {
                   </div>
                 )}
 
-                {addCashStage === "coinbase-checkout" && coinbaseCharge && (
+                {addCashStage === "coinbase-checkout" && coinbaseDeposit && (
                   <div style={addCashConfirmScene}>
                     <div style={addCashConfirmPanel}>
-                      <div style={addCashConfirmTitle}>Pay with crypto</div>
+                      <div style={addCashConfirmTitle}>
+                        Send {coinbaseDeposit.asset}
+                      </div>
 
                       <div style={addCashConfirmAmount}>
-                        ${coinbaseCharge.grossAmount.toFixed(2)} USD
+                        {coinbaseDeposit.assetAmount.toFixed(8)}{" "}
+                        {coinbaseDeposit.asset}
                       </div>
+
+                      <button
+                        type="button"
+                        style={depositCopyButton}
+                        title="Copy crypto amount"
+                        onClick={() =>
+                          void copyDepositValue(
+                            "amount",
+                            String(coinbaseDeposit.assetAmount),
+                          )
+                        }
+                      >
+                        <FaRegCopy aria-hidden="true" />
+                        {copiedDepositField === "amount"
+                          ? "Amount copied"
+                          : "Copy amount"}
+                      </button>
 
                       <div style={addCashConfirmDetails}>
                         <div style={addCashConfirmRow}>
-                          <span style={addCashConfirmLabel}>Accepted:</span>
+                          <span style={addCashConfirmLabel}>Value:</span>
                           <span style={addCashConfirmValue}>
-                            {coinbaseCharge.supportedAssets.join(" · ")}
+                            ${coinbaseDeposit.grossAmount.toFixed(2)} USD
+                          </span>
+                        </div>
+
+                        <div style={addCashConfirmRow}>
+                          <span style={addCashConfirmLabel}>Network:</span>
+                          <span style={addCashConfirmValue}>
+                            {coinbaseDeposit.network}
                           </span>
                         </div>
 
                         <div style={addCashConfirmRow}>
                           <span style={addCashConfirmLabel}>
-                            Deposit fee ({coinbaseCharge.feePercent}%):
+                            Deposit fee ({coinbaseDeposit.feePercent}%):
                           </span>
                           <span style={addCashConfirmValue}>
-                            -${coinbaseCharge.feeAmount.toFixed(2)}
+                            -${coinbaseDeposit.feeAmount.toFixed(2)}
                           </span>
                         </div>
 
@@ -3330,51 +3587,59 @@ export default function BetBurn() {
                             Credited to wallet:
                           </span>
                           <span style={addCashConfirmValue}>
-                            ${coinbaseCharge.netAmount.toFixed(2)}
+                            ${coinbaseDeposit.netAmount.toFixed(2)}
                           </span>
                         </div>
 
                         <div style={addCashConfirmRow}>
                           <span style={addCashConfirmLabel}>You receive:</span>
                           <span style={addCashConfirmValue}>
-                            {coinbaseCharge.gains.toLocaleString()} GM
-                          </span>
-                        </div>
-
-                        <div style={addCashConfirmRow}>
-                          <span style={addCashConfirmLabel}>
-                            Funds will arrive:
-                          </span>
-                          <span style={addCashConfirmValue}>
-                            After network confirmation
+                            {coinbaseDeposit.gains.toLocaleString()} GM
                           </span>
                         </div>
                       </div>
 
+                      <div style={depositAddressBlock}>
+                        <span style={depositAddressLabel}>
+                          {coinbaseDeposit.asset} receive address
+                        </span>
+                        <span style={depositAddressValue}>
+                          {coinbaseDeposit.address}
+                        </span>
+                        <button
+                          type="button"
+                          style={depositAddressCopyButton}
+                          title="Copy receive address"
+                          onClick={() =>
+                            void copyDepositValue(
+                              "address",
+                              coinbaseDeposit.address,
+                            )
+                          }
+                        >
+                          <FaRegCopy aria-hidden="true" />
+                          {copiedDepositField === "address"
+                            ? "Address copied"
+                            : "Copy address"}
+                        </button>
+                      </div>
+
                       <div style={cryptoCheckoutNote}>
-                        Your wallet is credited once the payment confirms
-                        on-chain. This can take a few minutes.
+                        {coinbaseDeposit.status === "expired"
+                          ? "The quoted amount has expired. Late payments are still monitored and credited at their received USD value."
+                          : "Waiting for network confirmation. Keep this page open and your wallet will update automatically."}
                       </div>
 
                       {addCashErr && (
                         <div style={addCashConfirmError}>{addCashErr}</div>
                       )}
 
-                      <a
-                        style={addCashConfirmPrimaryButton}
-                        href={coinbaseCharge.hostedUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        Continue to Coinbase
-                      </a>
-
                       <button
                         style={addCashConfirmBackButton}
                         type="button"
                         onClick={() => {
                           setAddCashErr(null);
-                          setCoinbaseCharge(null);
+                          setCoinbaseDeposit(null);
                           setAddCashStage("entry");
                         }}
                       >
@@ -3554,71 +3819,11 @@ export default function BetBurn() {
           </div>
         )}
       </div>
-    </div>
+    </main>
   );
 }
 
 /* -------- styles -------- */
-
-const page: React.CSSProperties = {
-  height: "100vh",
-  width: "100vw",
-  margin: 0,
-  padding: 0,
-  background: "#000",
-  overflowX: "hidden",
-  overflowY: "auto",
-  fontFamily: '"Segoe UI", Calibri, Arial, sans-serif',
-  // "Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif",
-  color: "#fff",
-};
-
-const bg: React.CSSProperties = {
-  minHeight: "100vh",
-  width: "100%",
-  padding: "clamp(12px, 2vw, 24px)",
-  boxSizing: "border-box",
-  background:
-    "linear-gradient(rgba(0,0,0,0.76), rgba(0,0,0,0.76)), url('/bg.jpg') center/cover",
-  position: "relative",
-};
-
-/* Header stays anchored */
-const headerBar: React.CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "flex-start",
-};
-
-const accountActions: React.CSSProperties = {
-  position: "absolute",
-  top: 18,
-  right: 62,
-  height: 28,
-  display: "flex",
-  alignItems: "center",
-  gap: 10,
-  zIndex: 30,
-};
-
-const accountIconButton: React.CSSProperties = {
-  width: 28,
-  height: 28,
-  padding: 0,
-  border: "none",
-  background: "transparent",
-  color: "#fff",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  cursor: "pointer",
-};
-
-const accountDivider: React.CSSProperties = {
-  width: 1,
-  height: 26,
-  background: "rgba(255,255,255,0.75)",
-};
 
 const loginPanel: React.CSSProperties = {
   width: "min(420px, 92vw)",
@@ -3703,117 +3908,6 @@ const registerLink: React.CSSProperties = {
   textDecoration: "none",
 };
 
-const brandRow: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 12,
-};
-
-const logoImg: React.CSSProperties = {
-  width: "clamp(44px, 7vw, 60px)",
-  height: "clamp(44px, 7vw, 60px)",
-};
-
-const brandText: React.CSSProperties = {
-  fontWeight: 700,
-  fontSize: "clamp(28px, 5vw, 48px)",
-  color: "#F7D023",
-};
-
-/* Center lane: this is the key */
-const centerLane: React.CSSProperties = {
-  position: "relative",
-  width: "100%",
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "center",
-  pointerEvents: "auto",
-  paddingBottom: 24,
-};
-
-const tabsWrap: React.CSSProperties = {
-  width: "100%",
-  display: "flex",
-  justifyContent: "center",
-  marginTop: 12,
-};
-
-const tabsPill: React.CSSProperties = {
-  width: "min(860px, 92vw)",
-  background: "#272626",
-  borderRadius: 45,
-  padding: 10,
-  display: "flex",
-  justifyContent: "space-between",
-  gap: 12,
-};
-
-const tabBtn: React.CSSProperties = {
-  flex: 1,
-  height: 45,
-  borderRadius: 28,
-  border: "none",
-  cursor: "pointer",
-  fontWeight: 700,
-  fontSize: 16,
-  textTransform: "none",
-};
-
-/* Wallet layout centered inside lane */
-const walletRow: React.CSSProperties = {
-  width: "fit-content",
-  margin: "38px auto 0",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "flex-start",
-  // gap: 45,
-};
-
-const walletInfo: React.CSSProperties = {
-  width: 360,
-  flexShrink: 0,
-};
-
-const tokenLabelRow: React.CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  gap: 7,
-  marginBottom: 7,
-};
-
-const tokenIcon: React.CSSProperties = {
-  width: 28,
-  height: 28,
-  objectFit: "contain",
-};
-
-const tokenLabel: React.CSSProperties = {
-  color: "#ffbd17",
-  fontSize: 17,
-  fontWeight: 700,
-};
-
-const gm: React.CSSProperties = {
-  color: "#F4E8D2",
-  fontSize: 34,
-  lineHeight: 1,
-  fontWeight: 700,
-};
-
-const gmRate: React.CSSProperties = {
-  color: "#F4E8D2",
-  fontSize: 17,
-  fontWeight: 400,
-  fontStyle: "italic",
-};
-
-const balanceLine: React.CSSProperties = {
-  display: "flex",
-  alignItems: "baseline",
-  gap: 8,
-  whiteSpace: "nowrap",
-};
-
 const primary: React.CSSProperties = {
   minWidth: 179,
   height: 29,
@@ -3825,42 +3919,6 @@ const primary: React.CSSProperties = {
   fontSize: 17,
   fontWeight: 700,
   cursor: "pointer",
-};
-
-const transferAmountWrap: React.CSSProperties = {
-  width: 200,
-  height: 34,
-  marginTop: 9,
-  borderRadius: 999,
-  background: "#dedede",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  padding: "0 18px",
-  boxSizing: "border-box",
-};
-
-const transferAmountPrefix: React.CSSProperties = {
-  color: "#4B4B4B",
-  fontSize: 22,
-  fontWeight: 400,
-};
-
-const transferAmountInput: React.CSSProperties = {
-  width: 125,
-  border: "none",
-  outline: "none",
-  background: "transparent",
-  color: "#4B4B4B",
-  fontSize: 22,
-  textAlign: "center",
-  fontFamily: '"Segoe UI", Calibri, Arial, sans-serif',
-};
-
-const transferHint: React.CSSProperties = {
-  marginTop: 8,
-  fontSize: 12,
-  color: "rgba(255,255,255,0.78)",
 };
 
 const transferValidationText: React.CSSProperties = {
@@ -4062,12 +4120,92 @@ const cryptoAssetButton: React.CSSProperties = {
   cursor: "pointer",
 };
 
+const depositAssetPicker: React.CSSProperties = {
+  width: "100%",
+  display: "flex",
+  gap: 8,
+  marginTop: 14,
+};
+
+const depositAssetButton: React.CSSProperties = {
+  flex: 1,
+  height: 34,
+  borderWidth: 1,
+  borderStyle: "solid",
+  borderRadius: 6,
+  background: "rgba(20,20,20,0.72)",
+  fontSize: 13,
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
 const cryptoCheckoutNote: React.CSSProperties = {
   marginTop: 14,
   color: "#777777",
   fontSize: 13,
   lineHeight: 1.45,
   textAlign: "left",
+};
+
+const depositCopyButton: React.CSSProperties = {
+  minWidth: 128,
+  height: 32,
+  margin: "12px auto 0",
+  padding: "0 12px",
+  border: "1px solid #B8B8B8",
+  borderRadius: 6,
+  background: "#FFFFFF",
+  color: "#0052B4",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 7,
+  fontSize: 13,
+  fontWeight: 600,
+  cursor: "pointer",
+};
+
+const depositAddressBlock: React.CSSProperties = {
+  width: "100%",
+  marginTop: 24,
+  padding: 14,
+  border: "1px solid #D0D0D0",
+  borderRadius: 6,
+  boxSizing: "border-box",
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "stretch",
+  gap: 10,
+};
+
+const depositAddressLabel: React.CSSProperties = {
+  color: "#666666",
+  fontSize: 12,
+  fontWeight: 600,
+};
+
+const depositAddressValue: React.CSSProperties = {
+  color: "#111111",
+  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+  fontSize: 12,
+  lineHeight: 1.45,
+  overflowWrap: "anywhere",
+  userSelect: "all",
+};
+
+const depositAddressCopyButton: React.CSSProperties = {
+  height: 32,
+  border: "none",
+  borderRadius: 6,
+  background: "#0052B4",
+  color: "#FFFFFF",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 7,
+  fontSize: 13,
+  fontWeight: 700,
+  cursor: "pointer",
 };
 
 const addCashContinueButton: React.CSSProperties = {
