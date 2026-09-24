@@ -37,11 +37,11 @@ class AdminApiService {
 
   private async fetchWithAuth(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
   ): Promise<unknown> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      "api": process.env.NEXT_PUBLIC_API_KEY || "KEY",
+      api: process.env.NEXT_PUBLIC_API_KEY || "KEY",
     };
 
     if (options.headers) {
@@ -80,7 +80,10 @@ class AdminApiService {
   async login(username: string, password: string) {
     const response = await fetch(`${this.baseUrl}/api/v2/auth/login`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", api: process.env.NEXT_PUBLIC_API_KEY || "KEY" },
+      headers: {
+        "Content-Type": "application/json",
+        api: process.env.NEXT_PUBLIC_API_KEY || "KEY",
+      },
       body: JSON.stringify({ username, password }),
     });
 
@@ -112,7 +115,7 @@ class AdminApiService {
       offset?: number;
       sortBy?: string;
       sortOrder?: "ASC" | "DESC";
-    } = {}
+    } = {},
   ) {
     const queryParams = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
@@ -122,12 +125,37 @@ class AdminApiService {
     });
 
     return this.fetchWithAuth(
-      `/api/v2/admin/players?${queryParams.toString()}`
+      `/api/v2/admin/players?${queryParams.toString()}`,
     );
   }
 
   async getPlayer(userId: string) {
     return this.fetchWithAuth(`/api/v2/admin/players/${userId}`);
+  }
+
+  async getPlayerTransactions(
+    userId: string,
+    limit = 10,
+    offset = 0,
+    startDate?: string,
+    endDate?: string,
+  ) {
+    const params = new URLSearchParams();
+
+    params.set("limit", limit.toString());
+    params.set("offset", offset.toString());
+
+    if (startDate) {
+      params.set("startDate", startDate);
+    }
+
+    if (endDate) {
+      params.set("endDate", endDate);
+    }
+
+    return this.fetchWithAuth(
+      `/api/v2/admin/players/${userId}/transactions?${params.toString()}`,
+    );
   }
 
   // Account Actions
@@ -153,7 +181,7 @@ class AdminApiService {
       gains?: number;
       coinsTemporal?: number;
       reason: string;
-    }
+    },
   ) {
     return this.fetchWithAuth(`/api/v2/admin/players/${userId}/funds`, {
       method: "PATCH",
@@ -171,7 +199,7 @@ class AdminApiService {
       endDate?: string;
       limit?: number;
       offset?: number;
-    } = {}
+    } = {},
   ) {
     const queryParams = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
@@ -199,7 +227,7 @@ class AdminApiService {
       firstPlacePrize: number;
       secondPlacePrize: number;
       thirdPlacePrize: number;
-    }
+    },
   ) {
     return this.fetchWithAuth(`/api/v2/admin/prizes/${period}/${mode}`, {
       method: "PUT",
@@ -214,7 +242,7 @@ class AdminApiService {
       trackId?: string;
       limit?: number;
       offset?: number;
-    } = {}
+    } = {},
   ) {
     const queryParams = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
@@ -224,7 +252,7 @@ class AdminApiService {
     });
 
     return this.fetchWithAuth(
-      `/api/v2/admin/races/flagged?${queryParams.toString()}`
+      `/api/v2/admin/races/flagged?${queryParams.toString()}`,
     );
   }
 
@@ -253,7 +281,7 @@ class AdminApiService {
       flaggedOnly?: boolean;
       limit?: number;
       offset?: number;
-    } = {}
+    } = {},
   ) {
     const queryParams = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
@@ -263,22 +291,28 @@ class AdminApiService {
     });
 
     return this.fetchWithAuth(
-      `/api/v2/admin/players/${userId}/races?${queryParams.toString()}`
+      `/api/v2/admin/players/${userId}/races?${queryParams.toString()}`,
     );
   }
 
   // Bet Management
   async getAllBets(
     params: {
-      status?: 'open' | 'active' | 'completed' | 'cancelled' | 'refunded' | 'rematch';
+      status?:
+        | "open"
+        | "active"
+        | "completed"
+        | "cancelled"
+        | "refunded"
+        | "rematch";
       creatorId?: string;
       acceptorId?: string;
       startDate?: string;
       endDate?: string;
       limit?: number;
       offset?: number;
-      period?: '7d' | '30d' | '365d';
-    } = {}
+      period?: "7d" | "30d" | "365d";
+    } = {},
   ) {
     const queryParams = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
@@ -288,11 +322,15 @@ class AdminApiService {
     });
 
     return this.fetchWithAuth(
-      `/api/v2/bets/admin/all?${queryParams.toString()}`
+      `/api/v2/bets/admin/all?${queryParams.toString()}`,
     );
   }
 
-  async completeBet(betId: string, winnerId: string, raceValidationId?: string) {
+  async completeBet(
+    betId: string,
+    winnerId: string,
+    raceValidationId?: string,
+  ) {
     return this.fetchWithAuth(`/api/v2/bets/admin/${betId}/complete`, {
       method: "POST",
       body: JSON.stringify({ winnerId, raceValidationId }),
@@ -312,11 +350,11 @@ class AdminApiService {
       userId?: string;
       username?: string;
       profileId?: string;
-      period?: 'daily' | 'weekly' | 'monthly';
-      mode?: 'singleplayer' | 'multiplayer';
+      period?: "daily" | "weekly" | "monthly";
+      mode?: "singleplayer" | "multiplayer";
       limit?: number;
       offset?: number;
-    } = {}
+    } = {},
   ) {
     const queryParams = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {
@@ -326,7 +364,7 @@ class AdminApiService {
     });
 
     return this.fetchWithAuth(
-      `/api/v2/tournament/tournament-wins?${queryParams.toString()}`
+      `/api/v2/tournament/tournament-wins?${queryParams.toString()}`,
     );
   }
 }
