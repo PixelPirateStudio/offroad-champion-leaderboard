@@ -1,6 +1,24 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
 const USE_MOCK_API = process.env.NEXT_PUBLIC_USE_MOCK_API === "true";
 
+export type BitgoStatus = {
+  testMode: true; network: string; asset: string;
+  depositsEnabled: boolean; payoutsEnabled: boolean; payoutMessage: string | null;
+};
+export type BitgoDeposit = {
+  id: string; address: string; network: string; asset: string;
+  receivedAmount: number; creditedGains: number; feeAmount: number; testMode: true;
+  platformFeeAmount: number; platformFeeBps: number; providerFeeAmount: number;
+};
+export type BitgoQuote = {
+  amountCents: number; feeCents: number; netCents: number;
+  platformFeeCents: number; providerFeeCents: number; platformFeeBps: number;
+  network: string; asset: string; testMode: true;
+};
+export type BitgoPayout = BitgoQuote & {
+  id: string; address: string; status: string; transactionHash: string | null; message: string | null;
+};
+
 export type StripePayoutQuote = {
   grossAmount: string;
   feeAmount: string;
@@ -207,6 +225,29 @@ class PlayerApiService {
 
     return { message: text };
   }
+
+  private async bitgoRequest<T>(path: string, body?: object): Promise<T> {
+    if (USE_MOCK_API) throw new Error("BitGo needs a real test account. Mock payments are disabled for this provider.");
+    const response = await fetch(`${this.baseUrl}/api/v2/bitgo${path}`, {
+      method: body ? "POST" : "GET", headers: this.headers(),
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await this.readResponse(response);
+    if (!response.ok) throw Object.assign(new Error(data?.message || "BitGo request failed"), { status: response.status });
+    return data as T;
+  }
+
+  getBitgoStatus() { return this.bitgoRequest<BitgoStatus>("/status"); }
+  createBitgoDeposit() { return this.bitgoRequest<BitgoDeposit>("/deposits", {}); }
+  getBitgoDeposit() { return this.bitgoRequest<BitgoDeposit>("/deposits/current"); }
+  getBitgoQuote(amount: string) {
+    return this.bitgoRequest<BitgoQuote>(`/payout/quote?amount=${encodeURIComponent(amount)}`);
+  }
+  createBitgoPayout(body: { amount: string; address: string; requestKey: string; expectedFeeCents: number }) {
+    return this.bitgoRequest<BitgoPayout>("/payouts", body);
+  }
+  getBitgoPayout(id: string) { return this.bitgoRequest<BitgoPayout>(`/payouts/${encodeURIComponent(id)}`); }
+  getCurrentBitgoPayout() { return this.bitgoRequest<BitgoPayout | null>("/payouts/current"); }
 
   async login(username: string, password: string) {
     if (USE_MOCK_API) {

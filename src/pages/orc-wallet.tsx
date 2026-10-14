@@ -16,12 +16,14 @@ import {
 } from "@/services/playerApi";
 import AddCashStripeFlow from "@/components/wallet/AddCashStripeFlow";
 import AddCashPayPalFlow from "@/components/wallet/AddCashPayPalFlow";
+import BitgoFlow from "@/components/wallet/BitgoFlow";
 import styles from "@/styles/OrcWallet.module.css";
 import {
   FaUniversity,
   FaGlobeAmericas,
   FaPaypal,
   FaRegCopy,
+  FaWallet,
 } from "react-icons/fa";
 import { SiCashapp, SiCoinbase } from "react-icons/si";
 import { US } from "country-flag-icons/react/3x2";
@@ -52,7 +54,7 @@ type AddCashStage =
   | "confirm"
   | "success";
 
-type AddCashMethod = "bank_transfer" | "cashapp" | "paypal" | "coinbase";
+type AddCashMethod = "bank_transfer" | "cashapp" | "paypal" | "coinbase" | "bitgo";
 type AddCashOutcome = "credited" | "pending";
 
 type TransferStage =
@@ -126,6 +128,7 @@ const SILVER_PER_USD = Number(
   process.env.NEXT_PUBLIC_WALLET_SILVER_PER_USD || 10000,
 );
 const USE_MOCK_API = process.env.NEXT_PUBLIC_USE_MOCK_API === "true";
+const SHOW_COINBASE_OPTIONS = false;
 
 const stripePromise = loadStripe(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "",
@@ -153,8 +156,8 @@ const depositLabel = (status?: string) =>
 
 const transactionItem = (transaction: WalletTransaction): TransactionItem => {
   const provider =
-    transaction.provider.charAt(0).toUpperCase() +
-    transaction.provider.slice(1);
+    transaction.provider === "bitgo" ? "BitGo Test" :
+      transaction.provider.charAt(0).toUpperCase() + transaction.provider.slice(1);
   const asset = transaction.asset ? ` (${transaction.asset})` : "";
   const fee =
     Number(transaction.feeAmount) > 0
@@ -366,6 +369,7 @@ export default function BetBurn() {
   const [coinStoreAmount, setCoinStoreAmount] = useState<string>("5.00");
   const [coinStoreLoading, setCoinStoreLoading] = useState(false);
   const [coinStoreErr, setCoinStoreErr] = useState<string | null>(null);
+  const [bitgoFlow, setBitgoFlow] = useState<"deposit" | "withdraw" | null>(null);
   const [coinStoreMessage, setCoinStoreMessage] = useState<string | null>(null);
 
   const mapProfile = (p: Partial<Profile>): Profile => ({
@@ -582,7 +586,7 @@ export default function BetBurn() {
         ? "Cash App Pay"
         : addCashMethod === "paypal"
           ? "PayPal"
-          : "Coinbase";
+          : addCashMethod === "bitgo" ? "BitGo (USDC)" : "Coinbase";
   const parsedTransferAmount = Number(transferAmount || "0");
   const hasValidTransferAmount =
     Number.isFinite(parsedTransferAmount) &&
@@ -1310,6 +1314,8 @@ export default function BetBurn() {
 
   return (
     <main className={styles.page}>
+      {bitgoFlow && <BitgoFlow mode={bitgoFlow} amount={bitgoFlow === "withdraw" ? transferAmount : addCashAmount}
+        onClose={() => { setBitgoFlow(null); void loadWalletData(); }} onUpdate={() => void loadWalletData()} />}
       <div className={styles.canvas}>
         <header className={styles.header}>
           <div className={styles.brand}>
@@ -2414,26 +2420,54 @@ export default function BetBurn() {
 
                         <button
                           type="button"
+                          onClick={() => setBitgoFlow("withdraw")}
+                          title="Withdraw test USDC with BitGo"
                           style={{
                             ...payoutMethodOption,
-                            ...(selectedPayoutMethod === "coinbase"
-                              ? payoutMethodOptionSelected
-                              : {}),
-                          }}
-                          onClick={() => {
-                            setTransferSubmitErr(null);
-                            setSelectedPayoutMethod("coinbase");
+                            height: "auto",
+                            minHeight: 58,
+                            padding: "10px 16px",
+                            background: "#F3F4F6",
+                            cursor: "pointer",
                           }}
                         >
                           <span style={payoutIconSlot} aria-hidden="true">
-                            <SiCoinbase size={38} color="#0052FF" />
+                            <FaWallet size={30} color="#475569" />
                           </span>
-
-                          <span style={payoutLabelGroup}>
-                            <span style={payoutActionText}>Withdraw with</span>
-                            <strong style={payoutBrandText}>Coinbase</strong>
+                          <span style={{ minWidth: 0, textAlign: "left" }}>
+                            <span style={{ display: "block", fontSize: 18 }}>
+                              Withdraw with BitGo
+                            </span>
+                            <span style={{ display: "block", fontSize: 12, color: "#595959" }}>
+                              USDC - Arc Testnet
+                            </span>
                           </span>
                         </button>
+
+                        {SHOW_COINBASE_OPTIONS && (
+                          <button
+                            type="button"
+                            style={{
+                              ...payoutMethodOption,
+                              ...(selectedPayoutMethod === "coinbase"
+                                ? payoutMethodOptionSelected
+                                : {}),
+                            }}
+                            onClick={() => {
+                              setTransferSubmitErr(null);
+                              setSelectedPayoutMethod("coinbase");
+                            }}
+                          >
+                            <span style={payoutIconSlot} aria-hidden="true">
+                              <SiCoinbase size={38} color="#0052FF" />
+                            </span>
+
+                            <span style={payoutLabelGroup}>
+                              <span style={payoutActionText}>Withdraw with</span>
+                              <strong style={payoutBrandText}>Coinbase</strong>
+                            </span>
+                          </button>
+                        )}
                       </div>
 
                       <div style={payoutMethodActions}>
@@ -3370,21 +3404,45 @@ export default function BetBurn() {
 
                       <button
                         type="button"
+                        onClick={() => setAddCashMethod("bitgo")}
+                        title="Deposit test USDC with BitGo"
                         style={{
                           ...paymentMethodButton,
-                          borderColor:
-                            addCashMethod === "coinbase"
-                              ? "#FFBD17"
-                              : "rgba(255,255,255,0.55)",
+                          borderColor: addCashMethod === "bitgo" ? "#FFBD17" : "rgba(255,255,255,0.35)",
+                          padding: "10px 16px",
+                          cursor: "pointer",
                         }}
-                        onClick={() => setAddCashMethod("coinbase")}
                       >
                         <span style={addCashMethodIconSlot} aria-hidden="true">
-                          <SiCoinbase size={25} color="#4D7CFE" />
+                          <FaWallet size={24} color="#CBD5E1" />
                         </span>
-                        <span style={addCashMethodLabel}>Coinbase</span>
-                        <span style={addCashMethodHint}>BTC · ETH · SOL</span>
+                        <span style={addCashMethodLabel}>
+                          BitGo
+                          <span style={{ display: "block", fontSize: 12, fontWeight: 500, color: "#CBD5E1" }}>
+                            USDC - Arc Testnet
+                          </span>
+                        </span>
                       </button>
+
+                      {SHOW_COINBASE_OPTIONS && (
+                        <button
+                          type="button"
+                          style={{
+                            ...paymentMethodButton,
+                            borderColor:
+                              addCashMethod === "coinbase"
+                                ? "#FFBD17"
+                                : "rgba(255,255,255,0.55)",
+                          }}
+                          onClick={() => setAddCashMethod("coinbase")}
+                        >
+                          <span style={addCashMethodIconSlot} aria-hidden="true">
+                            <SiCoinbase size={25} color="#4D7CFE" />
+                          </span>
+                          <span style={addCashMethodLabel}>Coinbase</span>
+                          <span style={addCashMethodHint}>BTC · ETH · SOL</span>
+                        </button>
+                      )}
                     </div>
 
                     {addCashMethod === "coinbase" && (
@@ -3452,7 +3510,7 @@ export default function BetBurn() {
                           ? startStripeAddCashFlow
                           : addCashMethod === "paypal"
                             ? startPayPalAddCashFlow
-                            : startCoinbaseAddCashFlow
+                            : addCashMethod === "bitgo" ? () => setBitgoFlow("deposit") : startCoinbaseAddCashFlow
                       }
                       disabled={addCashLoading}
                     >
