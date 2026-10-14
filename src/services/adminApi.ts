@@ -158,6 +158,126 @@ class AdminApiService {
     );
   }
 
+  /**
+   * Download a ZIP containing company copies of all matching
+   * annual player tax documents.
+   */
+  async downloadAnnualPlayerTaxes(
+    year: number,
+    formType: "all" | "w9" | "w8ben",
+  ): Promise<Blob> {
+    const response = await fetch(
+      `${this.baseUrl}/api/v2/admin/annual-player-taxes/download?year=${year}&formType=${formType}`,
+      {
+        headers: {
+          api: process.env.NEXT_PUBLIC_API_KEY || "KEY",
+          ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+        },
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error("Failed to download annual player tax documents");
+    }
+
+    return response.blob();
+  }
+
+  /**
+   * Get players with annual tax documents for the selected year and form type.
+   * The response contains no sensitive tax ID information.
+   */
+  async getAnnualPlayerTaxes(
+    year: number,
+    formType: "all" | "w9" | "w8ben",
+  ): Promise<{
+    year: number;
+    formType: string;
+    players: {
+      userId: string;
+      username: string;
+      email: string;
+      fullName: string;
+      country: string;
+      formType: "w9" | "w8ben";
+      totalPayout: number;
+    }[];
+  }> {
+    const response = await fetch(
+      `${this.baseUrl}/api/v2/admin/annual-player-taxes?year=${year}&formType=${formType}`,
+      {
+        headers: {
+          api: process.env.NEXT_PUBLIC_API_KEY || "KEY",
+          ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+        },
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error("Failed to load annual player taxes");
+    }
+
+    return response.json();
+  }
+
+  /**
+   * Get the tax years available for a player's tax documents.
+   */
+  async getPlayerTaxYears(userId: string): Promise<{ years: number[] }> {
+    const response = await fetch(
+      `${this.baseUrl}/api/v2/admin/players/${userId}/tax-years`,
+      {
+        headers: {
+          api: process.env.NEXT_PUBLIC_API_KEY || "KEY",
+          ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+        },
+      },
+    );
+
+    if (!response.ok) {
+      let message = "Failed to load tax years";
+
+      try {
+        const errorData = await response.json();
+        message = errorData.message || errorData.error || message;
+      } catch {
+        // Keep the default message if the response is not JSON.
+      }
+
+      throw new Error(message);
+    }
+
+    return response.json();
+  }
+
+  // Tax Documents
+  async getPlayerTaxDocument(userId: string, year: number) {
+    const response = await fetch(
+      `${this.baseUrl}/api/v2/admin/players/${userId}/tax-document?year=${year}`,
+      {
+        headers: {
+          api: process.env.NEXT_PUBLIC_API_KEY || "KEY",
+          ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+        },
+      },
+    );
+
+    if (!response.ok) {
+      let message = "Failed to load tax document";
+
+      try {
+        const errorData = await response.json();
+        message = errorData.message || errorData.error || message;
+      } catch {
+        // Keep the default message if the response is not JSON.
+      }
+
+      throw new Error(message);
+    }
+
+    return response.blob();
+  }
+
   // Account Actions
   async freezeAccount(userId: string, reason: string) {
     return this.fetchWithAuth(`/api/v2/admin/players/${userId}/freeze`, {

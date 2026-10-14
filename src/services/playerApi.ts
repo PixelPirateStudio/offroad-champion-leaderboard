@@ -227,6 +227,214 @@ class PlayerApiService {
     return data;
   }
 
+  /**
+   * Check whether a withdrawal reaches the configured tax threshold.
+   */
+  async getWithdrawalTaxRequirement(amount: number): Promise<{
+    completedWithdrawals: number;
+    attemptedAmount: number;
+    projectedTotal: number;
+    threshold: number;
+    taxFormRequired: boolean;
+  }> {
+    const query = new URLSearchParams({
+      amount: String(amount),
+    });
+
+    const response = await fetch(
+      `${this.baseUrl}/api/v2/redemptions/tax-requirement?${query}`,
+      {
+        method: "GET",
+        headers: this.headers(),
+      },
+    );
+
+    const data = await this.readResponse(response);
+
+    if (!response.ok) {
+      throw new Error(
+        data?.message || "Failed to check withdrawal tax requirement",
+      );
+    }
+
+    return data;
+  }
+
+  /**
+   * Get the authenticated player's current tax-information status.
+   */
+  async getTaxStatus(): Promise<{
+    submitted: boolean;
+    taxInformation: {
+      id: string;
+      formType: "w9" | "w8ben";
+      fullName: string;
+      taxIdLast4: string | null;
+      country: string | null;
+      certified: boolean;
+      submittedAt: string;
+    } | null;
+  }> {
+    const r = await fetch(`${this.baseUrl}/api/v2/tax/status`, {
+      method: "GET",
+      headers: this.headers(),
+    });
+
+    const data = await this.readResponse(r);
+
+    if (!r.ok) {
+      throw new Error(data?.message || "Failed to get tax information status");
+    }
+
+    return data;
+  }
+
+  /**
+   * Get the tax years available for the authenticated player.
+   */
+  async getAvailableTaxYears(): Promise<{ years: number[] }> {
+    const r = await fetch(`${this.baseUrl}/api/v2/tax/years`, {
+      method: "GET",
+      headers: this.headers(),
+    });
+
+    const data = await this.readResponse(r);
+
+    if (!r.ok) {
+      throw new Error(data?.message || "Failed to get available tax years");
+    }
+
+    return data;
+  }
+
+  /**
+   * Submit or update the authenticated player's W-9 tax information.
+   */
+  async submitW9TaxInformation(params: {
+    fullName: string;
+    businessName: string;
+    federalTaxClassification: string;
+    ssnEin: string;
+    address: string;
+    city: string;
+    state: string;
+    zip: string;
+    signature: string;
+    certified: boolean;
+  }) {
+    const r = await fetch(`${this.baseUrl}/api/v2/tax/w9`, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify(params),
+    });
+
+    const data = await this.readResponse(r);
+
+    if (!r.ok) {
+      throw new Error(data?.message || "Failed to submit W-9 tax information");
+    }
+
+    return data;
+  }
+
+  /**
+   * Submit or update the authenticated player's W-8BEN tax information.
+   */
+  async submitW8BENTaxInformation(params: {
+    fullName: string;
+    country: string;
+    address: string;
+    city: string;
+    state: string;
+    zip: string;
+    dateOfBirth: string;
+    signature: string;
+    certified: boolean;
+  }) {
+    const r = await fetch(`${this.baseUrl}/api/v2/tax/w8ben`, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify(params),
+    });
+
+    const data = await this.readResponse(r);
+
+    if (!r.ok) {
+      throw new Error(
+        data?.message || "Failed to submit W-8BEN tax information",
+      );
+    }
+
+    return data;
+  }
+
+  /**
+   * Download the authenticated player's draft tax summary PDF.
+   */
+  async downloadTaxDocument(year: string) {
+    const r = await fetch(
+      `${this.baseUrl}/api/v2/tax/document?year=${encodeURIComponent(year)}`,
+      {
+        method: "GET",
+        headers: this.headers(),
+      },
+    );
+
+    if (!r.ok) {
+      const data = await this.readResponse(r);
+      throw new Error(data?.message || "Failed to download tax document");
+    }
+
+    const pdfBlob = await r.blob();
+
+    // Create a temporary browser URL for the PDF.
+    const url = window.URL.createObjectURL(pdfBlob);
+
+    // Create a temporary link so the browser downloads the file.
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "ORC-Draft-Tax-Summary.pdf";
+
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    // Clean up the temporary browser URL.
+    window.URL.revokeObjectURL(url);
+  }
+
+  /**
+   * Open the authenticated player's draft tax summary PDF
+   * in a new browser tab without downloading it.
+   */
+  async viewTaxDocument(year: string) {
+    const r = await fetch(
+      `${this.baseUrl}/api/v2/tax/document?year=${encodeURIComponent(year)}`,
+      {
+        method: "GET",
+        headers: this.headers(),
+      },
+    );
+
+    if (!r.ok) {
+      const data = await this.readResponse(r);
+      throw new Error(data?.message || "Failed to view tax document");
+    }
+
+    const pdfBlob = await r.blob();
+
+    // Create a temporary browser URL for the PDF.
+    const url = window.URL.createObjectURL(pdfBlob);
+
+    // Open the generated PDF in a new browser tab.
+    window.open(url, "_blank");
+
+    // Give the new tab time to load the blob before cleaning it up.
+    setTimeout(() => {
+      window.URL.revokeObjectURL(url);
+    }, 60000);
+  }
+
   async getMyDeposits(params: { limit?: number; offset?: number } = {}) {
     if (USE_MOCK_API) {
       return {

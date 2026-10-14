@@ -289,6 +289,14 @@ export default function BetBurn() {
     certified: false,
   });
 
+  const [taxSubmitError, setTaxSubmitError] = useState<string | null>(null);
+
+  // Tax years available for the player's tax documents.
+  const [availableTaxYears, setAvailableTaxYears] = useState<number[]>([]);
+
+  // Tax year currently selected in the Transactions section.
+  const [selectedTaxYear, setSelectedTaxYear] = useState<string>("");
+
   const [transferAmount, setTransferAmount] = useState<string>("0.00");
   const [transferMethod, setTransferMethod] =
     useState<WithdrawalMethod>("bank");
@@ -555,13 +563,32 @@ export default function BetBurn() {
     } finally {
       setTxLoading(false);
     }
+  };
 
+  const loadAvailableTaxYears = async () => {
+    try {
+      const data = await playerApi.getAvailableTaxYears();
+
+      const years = Array.isArray(data.years) ? data.years : [];
+
+      setAvailableTaxYears(years);
+
+      // Automatically select the latest available tax year.
+      if (years.length > 0) {
+        setSelectedTaxYear(String(years[0]));
+      }
+    } catch {
+      // Leave the tax-year list empty if it cannot be loaded.
+      setAvailableTaxYears([]);
+      setSelectedTaxYear("");
+    }
   };
 
   useEffect(() => {
     if (typeof window !== "undefined" && localStorage.getItem("playerToken")) {
       setIsAuthenticated(true);
       loadWalletData();
+      loadAvailableTaxYears();
     }
   }, []);
 
@@ -1233,6 +1260,7 @@ export default function BetBurn() {
       await playerApi.login(loginUsername.trim(), loginPassword);
       setIsAuthenticated(true);
       await loadWalletData();
+      await loadAvailableTaxYears();
     } catch (e: unknown) {
       setLoginErr(
         e instanceof Error
@@ -1394,9 +1422,7 @@ export default function BetBurn() {
                         <input
                           value={transferAmount}
                           onChange={(e) => {
-                            setTransferAmount(
-                              sanitizeUsdInput(e.target.value),
-                            );
+                            setTransferAmount(sanitizeUsdInput(e.target.value));
                             setStripePayoutQuote(null);
                           }}
                           inputMode="decimal"
@@ -1427,13 +1453,55 @@ export default function BetBurn() {
                     <button
                       style={primary}
                       type="button"
-                      onClick={() => {
+                      onClick={async () => {
+                        if (!hasValidTransferAmount || transferSubmitting)
+                          return;
+
                         setTransferSubmitErr(null);
-                        if (hasValidTransferAmount) {
-                          setTransferStage("method");
+                        setTransferSubmitting(true);
+
+                        try {
+                          // Check the player's withdrawal total against the $3,000 threshold.
+                          const requirement =
+                            await playerApi.getWithdrawalTaxRequirement(
+                              parsedTransferAmount,
+                            );
+
+                          if (!requirement.taxFormRequired) {
+                            // Below the threshold: skip tax forms.
+                            setTransferStage("method");
+                            return;
+                          }
+
+                          // At the threshold: check whether a certified tax form exists.
+                          const taxStatus = await playerApi.getTaxStatus();
+
+                          if (
+                            taxStatus.submitted &&
+                            taxStatus.taxInformation?.certified
+                          ) {
+                            // Already submitted: no need to complete the form again.
+                            setTaxClassification(
+                              taxStatus.taxInformation.formType === "w9"
+                                ? "us"
+                                : "non-us",
+                            );
+                            setTransferStage("method");
+                          } else {
+                            // No certified form: begin the existing W-9/W-8BEN flow.
+                            setTransferStage("tax-classification");
+                          }
+                        } catch (error) {
+                          setTransferSubmitErr(
+                            error instanceof Error
+                              ? error.message
+                              : "Failed to check withdrawal tax requirements",
+                          );
+                        } finally {
+                          setTransferSubmitting(false);
                         }
                       }}
-                      disabled={!hasValidTransferAmount}
+                      disabled={!hasValidTransferAmount || transferSubmitting}
                     >
                       Transfer
                     </button>
@@ -2065,12 +2133,71 @@ export default function BetBurn() {
                       )}
 
                       <div style={taxReviewButtonRow}>
+                        {taxSubmitError && (
+                          <div
+                            style={{
+                              color: "#C62828",
+                              background: "#FFEBEE",
+                              border: "1px solid #EF9A9A",
+                              borderRadius: 8,
+                              padding: "10px 12px",
+                              marginBottom: 12,
+                              fontSize: 14,
+                            }}
+                          >
+                            {taxSubmitError}
+                          </div>
+                        )}
                         <button
                           type="button"
                           style={taxReviewSubmitButton}
-                          onClick={() =>
-                            setTransferStage("tax-submission-complete")
-                          }
+                          onClick={async () => {
+                            try {
+                              setTaxSubmitError(null);
+
+                              if (taxClassification === "us") {
+                                await playerApi.submitW9TaxInformation({
+                                  fullName: w9Form.fullName,
+                                  businessName: w9Form.businessName,
+                                  federalTaxClassification:
+                                    w9Form.federalTaxClassification,
+                                  ssnEin: w9Form.ssnEin,
+                                  address: w9Form.address,
+                                  city: w9Form.city,
+                                  state: w9Form.state,
+                                  zip: w9Form.zip,
+                                  signature: w9Form.signature,
+                                  certified: w9Form.certified,
+                                });
+                              } else if (taxClassification === "non-us") {
+                                await playerApi.submitW8BENTaxInformation({
+                                  fullName: w8benForm.fullName,
+                                  country: w8benForm.country,
+                                  address: w8benForm.address,
+                                  city: w8benForm.city,
+                                  state: w8benForm.state,
+                                  zip: w8benForm.zip,
+                                  dateOfBirth: w8benForm.dateOfBirth,
+                                  signature: w8benForm.signature,
+                                  certified: w8benForm.certified,
+                                });
+                              } else {
+                                throw new Error(
+                                  "Please select your tax classification.",
+                                );
+                              }
+
+                              // Only show the success screen after the backend
+                              // successfully saves the tax information.
+                              setTransferStage("tax-submission-complete");
+                            } catch (error) {
+                              setTaxSubmitError(
+                                error instanceof Error
+                                  ? error.message
+                                  : "Failed to submit tax information",
+                              );
+                            }
+                          }}
                         >
                           Submit
                         </button>
@@ -2100,13 +2227,52 @@ export default function BetBurn() {
 
                       <p style={taxSubmissionMessage}>
                         Your tax information has been submitted successfully.
-                        You can now proceed with your withdrawal.
+                        You can now download your draft tax summary or proceed
+                        with your withdrawal.
                       </p>
 
                       <button
                         type="button"
+                        style={{
+                          ...taxSubmissionContinueButton,
+                          marginBottom: 12,
+                          opacity: 1,
+                          cursor: "pointer",
+                        }}
+                        onClick={async () => {
+                          try {
+                            setTaxSubmitError(null);
+                            await playerApi.downloadTaxDocument(
+                              selectedTaxYear,
+                            );
+                          } catch (error) {
+                            setTaxSubmitError(
+                              error instanceof Error
+                                ? error.message
+                                : "Failed to download tax document",
+                            );
+                          }
+                        }}
+                      >
+                        Download Tax Document
+                      </button>
+
+                      {taxSubmitError && (
+                        <div
+                          style={{
+                            color: "#C62828",
+                            marginBottom: 12,
+                            fontSize: 14,
+                          }}
+                        >
+                          {taxSubmitError}
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
                         style={taxSubmissionContinueButton}
-                        onClick={() => setTransferStage("confirm")}
+                        onClick={() => setTransferStage("method")}
                       >
                         Continue
                       </button>
@@ -2263,8 +2429,8 @@ export default function BetBurn() {
                               selectedPayoutMethod &&
                               !transferSubmitting &&
                               !connectLoading
-                              ? "pointer"
-                              : "not-allowed",
+                                ? "pointer"
+                                : "not-allowed",
                           }}
                           onClick={() => {
                             // Bank payouts run through Stripe Connect, so we
@@ -2491,7 +2657,8 @@ export default function BetBurn() {
                             totalLabel="You receive"
                             totalValue={`$${coinbasePayoutQuote.netAmount.toFixed(2)}`}
                             footRows={
-                              typeof coinbasePayoutQuote.assetAmount === "number"
+                              typeof coinbasePayoutQuote.assetAmount ===
+                              "number"
                                 ? [
                                     {
                                       label: `Approx. ${coinbaseAsset}`,
@@ -2792,7 +2959,9 @@ export default function BetBurn() {
 
                         {transferMethod !== "stripe" && (
                           <div style={addCashConfirmRow}>
-                            <span style={addCashConfirmLabel}>Destination:</span>
+                            <span style={addCashConfirmLabel}>
+                              Destination:
+                            </span>
                             <span
                               style={
                                 transferMethod === "coinbase"
@@ -2935,8 +3104,9 @@ export default function BetBurn() {
                       <div style={payoutSuccessHeading}>Congratulations!</div>
 
                       <div style={payoutSuccessAmount}>
-                        Your payout of <strong>{payoutSuccessAmountLabel}</strong>{" "}
-                        is on its way
+                        Your payout of{" "}
+                        <strong>{payoutSuccessAmountLabel}</strong> is on its
+                        way
                       </div>
 
                       <div style={payoutSuccessDivider} />
@@ -3126,7 +3296,9 @@ export default function BetBurn() {
                         <span style={addCashMethodIconSlot} aria-hidden="true">
                           <FaUniversity size={22} color="#FFFFFF" />
                         </span>
-                        <span style={addCashMethodLabel}>Bank Transfer (ACH)</span>
+                        <span style={addCashMethodLabel}>
+                          Bank Transfer (ACH)
+                        </span>
                       </button>
 
                       <button
@@ -3490,6 +3662,140 @@ export default function BetBurn() {
 
             {tab === "transactions" && (
               <div style={txWrap}>
+                <div
+                  style={{
+                    background: "rgba(0, 0, 0, 0.55)",
+                    border: "1px solid rgba(255, 255, 255, 0.18)",
+                    borderRadius: 12,
+                    padding: "16px 20px",
+                    marginBottom: 20,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 20,
+                  }}
+                >
+                  <div>
+                    <div
+                      style={{
+                        color: "#FFFFFF",
+                        fontSize: 16,
+                        fontWeight: 700,
+                        marginBottom: 5,
+                      }}
+                    >
+                      Tax Documents
+                    </div>
+
+                    <div
+                      style={{
+                        color: "rgba(255, 255, 255, 0.72)",
+                        fontSize: 12,
+                      }}
+                    >
+                      Access your available tax documents and withdrawal
+                      summaries.
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 14,
+                    }}
+                  >
+                    <select
+                      value={selectedTaxYear}
+                      onChange={(e) => setSelectedTaxYear(e.target.value)}
+                      aria-label="Choose tax year"
+                      style={{
+                        background: "rgba(0, 0, 0, 0.55)",
+                        color: "#FFFFFF",
+                        border: "1px solid rgba(255, 255, 255, 0.45)",
+                        borderRadius: 7,
+                        outline: "none",
+                        fontSize: 13,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        padding: "9px 34px 9px 14px",
+                        minWidth: 120,
+                      }}
+                    >
+                      {/* Latest available tax year is selected automatically. */}
+                      {availableTaxYears.map((year) => (
+                        <option
+                          key={year}
+                          value={String(year)}
+                          style={{ color: "#000000" }}
+                        >
+                          {year}
+                        </option>
+                      ))}
+                    </select>
+
+                    <button
+                      type="button"
+                      style={{
+                        background: "transparent",
+                        color: "#FFFFFF",
+                        border: "1px solid rgba(255, 255, 255, 0.45)",
+                        borderRadius: 7,
+                        padding: "9px 18px",
+                        fontWeight: 700,
+                        whiteSpace: "nowrap",
+                        cursor: "pointer",
+                      }}
+                      onClick={async () => {
+                        try {
+                          setTxErr(null);
+
+                          // Open the tax document for the selected tax year.
+                          await playerApi.viewTaxDocument(selectedTaxYear);
+                        } catch (error) {
+                          setTxErr(
+                            error instanceof Error
+                              ? error.message
+                              : "Failed to view tax document",
+                          );
+                        }
+                      }}
+                    >
+                      View
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    style={{
+                      background: "#FFBD17",
+                      color: "#000000",
+                      border: "none",
+                      borderRadius: 7,
+                      padding: "10px 16px",
+                      fontWeight: 700,
+                      whiteSpace: "nowrap",
+                      opacity: 1,
+                      cursor: "pointer",
+                    }}
+                    onClick={async () => {
+                      try {
+                        setTxErr(null);
+
+                        // Download the tax document for the selected tax year.
+                        await playerApi.downloadTaxDocument(selectedTaxYear);
+                      } catch (error) {
+                        setTxErr(
+                          error instanceof Error
+                            ? error.message
+                            : "Failed to download tax document",
+                        );
+                      }
+                    }}
+                  >
+                    Download Tax Summary
+                  </button>
+                </div>
                 {txLoading && (
                   <div style={txEmptyText}>Loading transactions…</div>
                 )}

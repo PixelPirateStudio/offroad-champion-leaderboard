@@ -1,19 +1,19 @@
-import React, { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { AdminLayout } from '@/components/admin/AdminLayout';
-import { useRequireAdmin } from '@/contexts/AdminAuthContext';
-import { adminApi } from '@/services/adminApi';
-import { useRouter } from 'next/router';
-import { ActionModal } from '@/components/admin/ActionModal';
-import { FundsAdjustmentModal } from '@/components/admin/FundsAdjustmentModal';
+import React, { useEffect, useState } from "react";
+import Link from "next/link";
+import { AdminLayout } from "@/components/admin/AdminLayout";
+import { useRequireAdmin } from "@/contexts/AdminAuthContext";
+import { adminApi } from "@/services/adminApi";
+import { useRouter } from "next/router";
+import { ActionModal } from "@/components/admin/ActionModal";
+import { FundsAdjustmentModal } from "@/components/admin/FundsAdjustmentModal";
 import {
   ArrowLeftIcon,
   ShieldExclamationIcon,
   ShieldCheckIcon,
   BanknotesIcon,
   TrophyIcon,
-} from '@heroicons/react/24/outline';
-import dayjs from 'dayjs';
+} from "@heroicons/react/24/outline";
+import dayjs from "dayjs";
 
 interface PlayerDetail {
   id: string;
@@ -136,6 +136,14 @@ export default function PlayerDetailPage() {
   const [endDate, setEndDate] = useState("");
   const [datePreset, setDatePreset] = useState("");
 
+  // Tax years available for this player's tax documents.
+  const [availableTaxYears, setAvailableTaxYears] = useState<number[]>([]);
+
+  // Tax document year selected by the admin.
+  const [selectedTaxYear, setSelectedTaxYear] = useState(
+    new Date().getFullYear(),
+  );
+
   const TRANSACTIONS_PER_PAGE = 25;
 
   const totalPages = Math.ceil(transactionTotal / TRANSACTIONS_PER_PAGE);
@@ -153,6 +161,7 @@ export default function PlayerDetailPage() {
   useEffect(() => {
     if (isAuthenticated && id) {
       loadPlayer();
+      loadAvailableTaxYears();
     }
   }, [isAuthenticated, id]);
 
@@ -192,6 +201,79 @@ export default function PlayerDetailPage() {
       setTransactionTotal(result.total || 0);
     } catch (err) {
       console.error("Failed to load transactions:", err);
+    }
+  };
+
+  // Load the tax years available for this player.
+  const loadAvailableTaxYears = async () => {
+    if (!id) return;
+
+    try {
+      const data = await adminApi.getPlayerTaxYears(id as string);
+      const years = Array.isArray(data.years) ? data.years : [];
+
+      setAvailableTaxYears(years);
+
+      // Automatically select the latest available year.
+      if (years.length > 0) {
+        setSelectedTaxYear(years[0]);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load tax years");
+    }
+  };
+
+  // Open the protected company copy of the player's tax document.
+  const handleViewTaxDocument = async () => {
+    if (!id) return;
+
+    try {
+      setError("");
+
+      const blob = await adminApi.getPlayerTaxDocument(
+        id as string,
+        selectedTaxYear,
+      );
+
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+
+      // Release the temporary browser URL after it has been opened.
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to load tax document",
+      );
+    }
+  };
+
+  // Download the protected company copy of the player's tax document.
+  const handleDownloadTaxDocument = async () => {
+    if (!id) return;
+
+    try {
+      setError("");
+
+      const blob = await adminApi.getPlayerTaxDocument(
+        id as string,
+        selectedTaxYear,
+      );
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+
+      link.href = url;
+      link.download = `tax-document-${id}-${selectedTaxYear}.pdf`;
+
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to download tax document",
+      );
     }
   };
 
@@ -719,6 +801,48 @@ export default function PlayerDetailPage() {
             ) : (
               <p className="text-gray-400 text-sm">No transactions found</p>
             )}
+          </div>
+        </div>
+
+        {/* Tax Documents Section */}
+        <div className="bg-[#0E0A1B] border border-purple-900/30 rounded-lg p-6">
+          <h2 className="text-xl font-semibold text-white mb-4">
+            Tax Documents
+          </h2>
+
+          <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+            <div>
+              <label className="block text-sm text-gray-400 mb-1">
+                Tax Year
+              </label>
+
+              <select
+                value={selectedTaxYear}
+                onChange={(e) => setSelectedTaxYear(Number(e.target.value))}
+                className="bg-gray-800 text-white border border-gray-600 rounded px-3 py-2"
+              >
+                {availableTaxYears.map((year) => (
+                  <option key={year} value={year}>
+                    {year}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleViewTaxDocument}
+              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+            >
+              View Company Copy
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadTaxDocument}
+              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+            >
+              Download Company Copy
+            </button>
           </div>
         </div>
 

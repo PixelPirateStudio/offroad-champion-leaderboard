@@ -1,14 +1,14 @@
-import React, { useEffect, useState } from 'react';
-import { AdminLayout } from '@/components/admin/AdminLayout';
-import { useRequireAdmin } from '@/contexts/AdminAuthContext';
-import { adminApi } from '@/services/adminApi';
-import Link from 'next/link';
+import React, { useEffect, useState } from "react";
+import { AdminLayout } from "@/components/admin/AdminLayout";
+import { useRequireAdmin } from "@/contexts/AdminAuthContext";
+import { adminApi } from "@/services/adminApi";
+import Link from "next/link";
 import {
   MagnifyingGlassIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   ShieldExclamationIcon,
-} from '@heroicons/react/24/outline';
+} from "@heroicons/react/24/outline";
 
 interface Player {
   id: string;
@@ -38,17 +38,88 @@ export default function PlayersPage() {
   const { isLoading: authLoading, isAuthenticated } = useRequireAdmin();
   const [data, setData] = useState<PlayersResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   // Filters
-  const [search, setSearch] = useState('');
-  const [searchInput, setSearchInput] = useState('');
-  const [filterFrozen, setFilterFrozen] = useState<'all' | 'frozen' | 'active'>('all');
-  const [sortBy, setSortBy] = useState('createdAt');
-  const [sortOrder, setSortOrder] = useState<'ASC' | 'DESC'>('DESC');
+  const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [filterFrozen, setFilterFrozen] = useState<"all" | "frozen" | "active">(
+    "all",
+  );
+  const [sortBy, setSortBy] = useState("createdAt");
+  const [sortOrder, setSortOrder] = useState<"ASC" | "DESC">("DESC");
   const [page, setPage] = useState(0);
   const limit = 20;
 
+  // Annual Player Taxes controls.
+  const [showAnnualTaxes, setShowAnnualTaxes] = useState(false);
+
+  // Selected year for annual tax documents.
+  const [taxYear, setTaxYear] = useState(new Date().getFullYear());
+
+  // Filter tax documents by form type.
+  const [taxFormType, setTaxFormType] = useState<"all" | "w9" | "w8ben">("all");
+
+  // Player records matching the selected annual tax filters.
+  interface AnnualTaxPlayer {
+    userId: string;
+    username: string;
+    email: string;
+    fullName: string;
+    country: string;
+    formType: "w9" | "w8ben";
+    totalPayout: number;
+  }
+
+  const [annualTaxPlayers, setAnnualTaxPlayers] = useState<AnnualTaxPlayer[]>(
+    [],
+  );
+
+  // Track loading and errors for annual tax records.
+  const [annualTaxesLoading, setAnnualTaxesLoading] = useState(false);
+  const [annualTaxesError, setAnnualTaxesError] = useState("");
+
+  // Load annual tax records when the section is open or filters change.
+useEffect(() => {
+  if (!showAnnualTaxes) {
+    return;
+  }
+
+  let cancelled = false;
+
+  const loadAnnualTaxes = async () => {
+    setAnnualTaxesLoading(true);
+    setAnnualTaxesError("");
+
+    try {
+      const result = await adminApi.getAnnualPlayerTaxes(
+        taxYear,
+        taxFormType,
+      );
+
+      // Ignore responses from outdated filter selections.
+      if (!cancelled) {
+        setAnnualTaxPlayers(result.players);
+      }
+    } catch (error) {
+      if (!cancelled) {
+        setAnnualTaxPlayers([]);
+        setAnnualTaxesError("Failed to load annual tax records.");
+      }
+    } finally {
+      if (!cancelled) {
+        setAnnualTaxesLoading(false);
+      }
+    }
+  };
+
+  loadAnnualTaxes();
+
+  return () => {
+    cancelled = true;
+  };
+}, [showAnnualTaxes, taxYear, taxFormType]);
+  
   useEffect(() => {
     if (isAuthenticated) {
       loadPlayers();
@@ -69,14 +140,14 @@ export default function PlayersPage() {
         params.search = search;
       }
 
-      if (filterFrozen !== 'all') {
-        params.isFrozen = filterFrozen === 'frozen';
+      if (filterFrozen !== "all") {
+        params.isFrozen = filterFrozen === "frozen";
       }
 
-      const result = await adminApi.getPlayers(params) as PlayersResponse;
+      const result = (await adminApi.getPlayers(params)) as PlayersResponse;
       setData(result);
     } catch (err) {
-      setError((err as Error).message || 'Failed to load players');
+      setError((err as Error).message || "Failed to load players");
     } finally {
       setLoading(false);
     }
@@ -105,7 +176,9 @@ export default function PlayersPage() {
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold text-white">Player Management</h1>
-          <p className="mt-2 text-gray-400">Search, view, and manage player accounts</p>
+          <p className="mt-2 text-gray-400">
+            Search, view, and manage player accounts
+          </p>
         </div>
 
         {error && (
@@ -140,11 +213,15 @@ export default function PlayersPage() {
             {/* Filters Row */}
             <div className="flex flex-wrap gap-4">
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Status</label>
+                <label className="block text-sm text-gray-400 mb-1">
+                  Status
+                </label>
                 <select
                   value={filterFrozen}
                   onChange={(e) => {
-                    setFilterFrozen(e.target.value as 'all' | 'frozen' | 'active');
+                    setFilterFrozen(
+                      e.target.value as "all" | "frozen" | "active",
+                    );
                     setPage(0);
                   }}
                   className="px-3 py-2 bg-[#190F31] border border-purple-900/30 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
@@ -156,7 +233,9 @@ export default function PlayersPage() {
               </div>
 
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Sort By</label>
+                <label className="block text-sm text-gray-400 mb-1">
+                  Sort By
+                </label>
                 <select
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value)}
@@ -169,24 +248,209 @@ export default function PlayersPage() {
               </div>
 
               <div>
-                <label className="block text-sm text-gray-400 mb-1">Order</label>
+                <label className="block text-sm text-gray-400 mb-1">
+                  Order
+                </label>
                 <select
                   value={sortOrder}
-                  onChange={(e) => setSortOrder(e.target.value as 'ASC' | 'DESC')}
+                  onChange={(e) =>
+                    setSortOrder(e.target.value as "ASC" | "DESC")
+                  }
                   className="px-3 py-2 bg-[#190F31] border border-purple-900/30 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                 >
                   <option value="DESC">Descending</option>
                   <option value="ASC">Ascending</option>
                 </select>
               </div>
+              {/* Annual Player Taxes controls */}
+              <div className="flex flex-col gap-3">
+                <div className="flex items-end h-full">
+                  <button
+                    type="button"
+                    onClick={() => setShowAnnualTaxes(!showAnnualTaxes)}
+                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+                  >
+                    Annual Player Taxes
+                  </button>
+                </div>
+
+                {showAnnualTaxes && (
+                  <div className="flex flex-wrap gap-3">
+                    {/* Tax year filter */}
+                    <div>
+                      <label className="block text-sm text-gray-400 mb-1">
+                        Tax Year
+                      </label>
+                      <select
+                        value={taxYear}
+                        onChange={(e) => setTaxYear(Number(e.target.value))}
+                        className="px-3 py-2 bg-[#190F31] border border-purple-900/30 rounded-lg text-white"
+                      >
+                        <option value={new Date().getFullYear()}>
+                          {new Date().getFullYear()}
+                        </option>
+                      </select>
+                    </div>
+
+                    {/* Tax form filter */}
+                    <div>
+                      <label className="block text-sm text-gray-400 mb-1">
+                        Tax Form
+                      </label>
+                      <select
+                        value={taxFormType}
+                        onChange={(e) =>
+                          setTaxFormType(
+                            e.target.value as "all" | "w9" | "w8ben",
+                          )
+                        }
+                        className="px-3 py-2 bg-[#190F31] border border-purple-900/30 rounded-lg text-white"
+                      >
+                        <option value="all">All Forms</option>
+                        <option value="w9">1099</option>
+                        <option value="w8ben">W-8BEN</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </form>
+          {/* Annual Player Taxes results */}
+          {showAnnualTaxes && (
+            <div className="mt-6 rounded-lg border border-purple-900/30 bg-[#190F31] p-4">
+              {/* Annual tax heading and bulk download button */}
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <h3 className="text-lg font-semibold text-white">
+                  Annual Player Taxes — {taxYear}
+                </h3>
+
+                <button
+                  type="button"
+                  disabled={annualTaxesLoading || annualTaxPlayers.length === 0}
+                  onClick={async () => {
+                    try {
+                      // Request the ZIP containing all matching company-copy PDFs.
+                      const zipBlob = await adminApi.downloadAnnualPlayerTaxes(
+                        taxYear,
+                        taxFormType,
+                      );
+
+                      // Create a temporary download link.
+                      const url = window.URL.createObjectURL(zipBlob);
+                      const link = document.createElement("a");
+
+                      link.href = url;
+                      link.download = `annual-player-taxes-${taxYear}-${taxFormType}.zip`;
+
+                      document.body.appendChild(link);
+                      link.click();
+                      link.remove();
+
+                      // Release the temporary URL after the download begins.
+                      window.setTimeout(
+                        () => window.URL.revokeObjectURL(url),
+                        1000,
+                      );
+                    } catch (error) {
+                      alert("Failed to download annual player tax documents.");
+                    }
+                  }}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Download All
+                </button>
+              </div>
+
+              {annualTaxesLoading ? (
+                <p className="text-gray-400">Loading tax records...</p>
+              ) : annualTaxesError ? (
+                <p className="text-red-400">{annualTaxesError}</p>
+              ) : annualTaxPlayers.length === 0 ? (
+                <p className="text-gray-400">
+                  No players with tax records found for these filters.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm text-white">
+                    <thead className="border-b border-purple-900/30 text-gray-400">
+                      <tr>
+                        <th className="px-3 py-3">Player</th>
+                        <th className="px-3 py-3">Full Name</th>
+                        <th className="px-3 py-3">Tax Form</th>
+                        <th className="px-3 py-3">Total Payout</th>
+                        <th className="px-3 py-3">Document</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {annualTaxPlayers.map((player) => (
+                        <tr
+                          key={player.userId}
+                          className="border-b border-purple-900/20"
+                        >
+                          <td className="px-3 py-3">{player.username}</td>
+                          <td className="px-3 py-3">{player.fullName}</td>
+                          <td className="px-3 py-3">
+                            {player.formType === "w9" ? "1099" : "W-8BEN"}
+                          </td>
+                          <td className="px-3 py-3">
+                            ${Number(player.totalPayout).toFixed(2)}
+                          </td>
+                          <td className="px-3 py-3">
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  // Download the company copy of this player's tax document.
+                                  const pdfBlob =
+                                    await adminApi.getPlayerTaxDocument(
+                                      player.userId,
+                                      taxYear,
+                                    );
+
+                                  // Create a temporary browser URL for the PDF.
+                                  const url =
+                                    window.URL.createObjectURL(pdfBlob);
+                                  const link = document.createElement("a");
+
+                                  link.href = url;
+                                  link.download = `tax-document-${player.userId}-${taxYear}.pdf`;
+
+                                  document.body.appendChild(link);
+                                  link.click();
+                                  link.remove();
+
+                                  // Release the temporary URL.
+                                  window.setTimeout(
+                                    () => window.URL.revokeObjectURL(url),
+                                    1000,
+                                  );
+                                } catch (error) {
+                                  alert("Failed to download the tax document.");
+                                }
+                              }}
+                              className="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+                            >
+                              Download PDF
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Results */}
         <div className="bg-[#0E0A1B] border border-purple-900/30 rounded-lg overflow-hidden">
           {loading ? (
-            <div className="p-8 text-center text-gray-400">Loading players...</div>
+            <div className="p-8 text-center text-gray-400">
+              Loading players...
+            </div>
           ) : data && data.players.length > 0 ? (
             <>
               <div className="overflow-x-auto">
@@ -221,19 +485,26 @@ export default function PlayersPage() {
                       <tr key={player.id} className="hover:bg-purple-900/20">
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div>
-                            <div className="text-sm font-medium text-white">{player.username}</div>
-                            <div className="text-sm text-gray-400">{player.name}</div>
+                            <div className="text-sm font-medium text-white">
+                              {player.username}
+                            </div>
+                            <div className="text-sm text-gray-400">
+                              {player.name}
+                            </div>
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
-                          {player.email || 'N/A'}
+                          {player.email || "N/A"}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
-                          {player.country || 'N/A'}
+                          {player.country || "N/A"}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm text-gray-300">
-                            <div>Gains: ${player.profile?.gains.toFixed(2) || '0.00'}</div>
+                            <div>
+                              Gains: $
+                              {player.profile?.gains.toFixed(2) || "0.00"}
+                            </div>
                             <div>Coins: {player.profile?.coins || 0}</div>
                           </div>
                         </td>
@@ -287,11 +558,13 @@ export default function PlayersPage() {
                 <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
                   <div>
                     <p className="text-sm text-gray-400">
-                      Showing <span className="font-medium">{page * limit + 1}</span> to{' '}
+                      Showing{" "}
+                      <span className="font-medium">{page * limit + 1}</span> to{" "}
                       <span className="font-medium">
                         {Math.min((page + 1) * limit, data.total)}
-                      </span>{' '}
-                      of <span className="font-medium">{data.total}</span> players
+                      </span>{" "}
+                      of <span className="font-medium">{data.total}</span>{" "}
+                      players
                     </p>
                   </div>
                   <div>
