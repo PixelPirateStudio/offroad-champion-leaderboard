@@ -48,6 +48,8 @@ export interface GeoMapProps {
   selectedCode?: string | null;
   /** currently hovered jurisdiction code (synced with the list) */
   hoveredCode?: string | null;
+  /** incrementing trigger to animate the map to a specific region */
+  focusTrigger?: { code: string; n: number } | null;
   /** fired when a region is clicked -> toggles that jurisdiction */
   onJurisdictionClick?: (code: string) => void;
   /** fired on region hover/leave -> highlights the matching list row */

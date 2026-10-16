@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowPathIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import {
   adminApi,
@@ -13,7 +13,6 @@ type GeoSubTab = 'countries' | 'states';
 
 const US_COUNTRY_CODE = 'US';
 
-// Build the saving-key used to track per-jurisdiction in-flight PATCH calls.
 const savingKey = (subTab: GeoSubTab, code: string) => `${subTab}:${code}`;
 
 function ToggleSwitch({
@@ -59,8 +58,6 @@ function ToggleSwitch({
  *
  * Self-contained: fetches from GET /api/v2/geo-restrictions (source of truth)
  * and mutates via the PATCH endpoints, all through the shared adminApi wrapper.
- * The fetched data state is intentionally kept generic (countries + usStates)
- * so a future interactive map (Phase 4) can reuse the same shape/component.
  */
 export function GeoRestrictions() {
   const [data, setData] = useState<GeoRestrictionsResponse | null>(null);
@@ -69,11 +66,16 @@ export function GeoRestrictions() {
 
   const [subTab, setSubTab] = useState<GeoSubTab>('countries');
   const [search, setSearch] = useState('');
+  const [showDisabledOnly, setShowDisabledOnly] = useState(false);
   const [savingKeys, setSavingKeys] = useState<Set<string>>(new Set());
   const [saveError, setSaveError] = useState<string | null>(null);
-  // Shared UI state so the list and the map highlight/select in sync.
   const [hoveredCode, setHoveredCode] = useState<string | null>(null);
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
+  const [mapFocusTrigger, setMapFocusTrigger] = useState<{ code: string; n: number } | null>(null);
+
+  // Refs for scrolling list items into view when the map is clicked.
+  const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const listScrollRef = useRef<HTMLDivElement>(null);
 
   const loadData = useCallback(async () => {
     setIsLoading(true);
@@ -94,7 +96,6 @@ export function GeoRestrictions() {
     loadData();
   }, [loadData]);
 
-  // The United States country row acts as the global US switch (backend parent).
   const usCountry = useMemo(
     () => data?.countries.find((c) => c.code === US_COUNTRY_CODE) ?? null,
     [data]
@@ -108,15 +109,13 @@ export function GeoRestrictions() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return list;
-    return list.filter(
+    const result = showDisabledOnly ? list.filter((j) => !j.enabled) : list;
+    if (!q) return result;
+    return result.filter(
       (j) => j.name.toLowerCase().includes(q) || j.code.toLowerCase().includes(q)
     );
-  }, [list, search]);
+  }, [list, search, showDisabledOnly]);
 
-  // Availability the map paints from — derived from the SAME `data` as the list
-  // (no separate map state). US states carry `overridden` when the US country
-  // is globally disabled.
   const jurisdictionsForMap = useMemo(() => {
     const map: Record<string, GeoMapJurisdiction> = {};
     for (const j of list) {
@@ -129,7 +128,6 @@ export function GeoRestrictions() {
     return map;
   }, [list, subTab, usGloballyDisabled]);
 
-  // Codes currently saving for the active sub-tab (shared with the list rows).
   const savingCodesSet = useMemo(() => {
     const prefix = `${subTab}:`;
     const s = new Set<string>();
@@ -150,9 +148,6 @@ export function GeoRestrictions() {
     });
   };
 
-  // Single toggle handler shared by BOTH the list rows and the map regions,
-  // keyed only by jurisdiction code. This guarantees one code path (and one
-  // state source) for every update, so list and map can never diverge.
   const handleToggle = async (code: string) => {
     const item = (subTab === 'countries' ? data?.countries : data?.usStates)?.find(
       (j) => j.code === code
@@ -160,7 +155,7 @@ export function GeoRestrictions() {
     if (!item) return;
 
     const key = savingKey(subTab, code);
-    if (savingKeys.has(key)) return; // prevent duplicate interaction while saving
+    if (savingKeys.has(key)) return;
 
     setSelectedCode(code);
     const nextEnabled = !item.enabled;
@@ -168,8 +163,6 @@ export function GeoRestrictions() {
     setSavingKeys((prev) => new Set(prev).add(key));
 
     try {
-      // Non-optimistic: only reflect the change after the backend confirms it,
-      // so neither the list nor the map ever shows a value that failed to persist.
       const record =
         subTab === 'countries'
           ? await adminApi.updateCountryAvailability(code, nextEnabled)
@@ -187,7 +180,24 @@ export function GeoRestrictions() {
     }
   };
 
-  // Loading state — no fake enabled/disabled values are shown.
+  // Scroll the list to a specific item (called when map region is clicked).
+  const scrollListTo = (code: string) => {
+    const el = itemRefs.current.get(code);
+    if (el) el.scrollIntoView({ behavior: 'instant', block: 'nearest' });
+  };
+
+  // Map click: toggle + scroll list to that item.
+  const handleMapClick = (code: string) => {
+    handleToggle(code);
+    scrollListTo(code);
+  };
+
+  // List toggle: toggle + animate map to zoom to that region.
+  const handleListToggle = (code: string) => {
+    handleToggle(code);
+    setMapFocusTrigger((prev) => ({ code, n: (prev?.n ?? 0) + 1 }));
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -199,7 +209,6 @@ export function GeoRestrictions() {
     );
   }
 
-  // Error state with retry — no fake jurisdiction data is rendered.
   if (loadError) {
     return (
       <div className="bg-red-900/20 border border-red-500 rounded-lg p-6 text-center space-y-4">
@@ -217,149 +226,176 @@ export function GeoRestrictions() {
 
   return (
     <div className="space-y-4">
-      {/* Subtitle (main title lives in the page header) */}
       <p className="text-sm text-gray-400 text-center">
         Control where Bet &amp; Burn is available. Disabled jurisdictions cannot
         create or accept bets.
       </p>
 
-      {/* Final composition: controls/list on the left, interactive map on the
-          right (stacks on narrow screens). */}
-      <div className="lg:grid lg:grid-cols-[minmax(300px,380px)_1fr] lg:gap-6 lg:items-start space-y-4 lg:space-y-0">
+      <div className="lg:grid lg:grid-cols-[minmax(300px,380px)_auto] lg:gap-6 lg:items-start space-y-4 lg:space-y-0">
         {/* LEFT: jurisdiction controls + list */}
         <div className="space-y-4">
-      {/* Countries / U.S. States sub-tabs */}
-      <div className="flex gap-3">
-        <button
-          onClick={() => setSubTab('countries')}
-          className={`px-6 py-2 rounded-full font-semibold transition-all ${
-            subTab === 'countries'
-              ? 'bg-yellow-500 text-black'
-              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-          }`}
-        >
-          Countries
-        </button>
-        <button
-          onClick={() => setSubTab('states')}
-          className={`px-6 py-2 rounded-full font-semibold transition-all ${
-            subTab === 'states'
-              ? 'bg-yellow-500 text-black'
-              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-          }`}
-        >
-          U.S. States
-        </button>
-      </div>
+          {/* Countries / U.S. States sub-tabs */}
+          <div className="flex gap-3">
+            <button
+              onClick={() => setSubTab('countries')}
+              className={`px-6 py-2 rounded-full font-semibold transition-all ${
+                subTab === 'countries'
+                  ? 'bg-yellow-500 text-black'
+                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
+            >
+              Countries
+            </button>
+            <button
+              onClick={() => setSubTab('states')}
+              className={`px-6 py-2 rounded-full font-semibold transition-all ${
+                subTab === 'states'
+                  ? 'bg-yellow-500 text-black'
+                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
+            >
+              U.S. States
+            </button>
+          </div>
 
-      {/* Search / filter */}
-      <div className="relative w-full">
-        <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-        <input
-          type="text"
-          placeholder={`Search ${subTab === 'countries' ? 'countries' : 'states'} by name or code...`}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full pl-10 pr-4 py-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-yellow-500 placeholder-gray-400"
-        />
-      </div>
-
-      {/* US global-override banner (states sub-tab only) */}
-      {subTab === 'states' && usGloballyDisabled && (
-        <div className="bg-amber-900/20 border border-amber-500 rounded-lg p-3">
-          <p className="text-amber-300 text-sm">
-            The <span className="font-semibold">United States</span> is globally
-            disabled, so <span className="font-semibold">all U.S. states are
-            currently blocked</span> regardless of their individual settings.
-            Re-enable the US in the Countries tab to apply per-state settings.
-          </p>
-        </div>
-      )}
-
-      {/* Save error feedback */}
-      {saveError && (
-        <div className="bg-red-900/20 border border-red-500 rounded-lg p-3">
-          <p className="text-red-400 text-sm">{saveError}</p>
-        </div>
-      )}
-
-      {/* Jurisdiction list */}
-      <div className="bg-[#0E0A1B] border border-purple-900/30 rounded-lg overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-2 border-b border-purple-900/30 text-xs uppercase tracking-wide text-gray-400">
-          <span>Jurisdiction</span>
-          <span>Bet &amp; Burn</span>
-        </div>
-
-        <div className="max-h-[60vh] overflow-y-auto divide-y divide-purple-900/20">
-          {filtered.length === 0 ? (
-            <div className="p-8 text-center text-gray-400">
-              No {subTab === 'countries' ? 'countries' : 'states'} match &quot;{search}&quot;.
+          {/* Search + disabled-only filter */}
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <input
+                type="text"
+                placeholder={`Search ${subTab === 'countries' ? 'countries' : 'states'} by name or code...`}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 bg-gray-700 text-white rounded border border-gray-600 focus:outline-none focus:ring-2 focus:ring-yellow-500 placeholder-gray-400"
+              />
             </div>
-          ) : (
-            filtered.map((item) => {
-              const key = savingKey(subTab, item.code);
-              const saving = savingKeys.has(key);
-              const overridden = subTab === 'states' && usGloballyDisabled;
-              return (
-                <div
-                  key={item.code}
-                  onMouseEnter={() => setHoveredCode(item.code)}
-                  onMouseLeave={() => setHoveredCode(null)}
-                  className={`flex items-center justify-between px-4 py-3 hover:bg-purple-900/10 ${
-                    hoveredCode === item.code ? 'bg-purple-900/20' : ''
-                  }`}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className="inline-flex items-center justify-center min-w-[2.5rem] px-2 py-1 rounded bg-gray-700 text-gray-200 text-xs font-mono">
-                      {item.code}
-                    </span>
-                    <span className="text-white truncate">{item.name}</span>
-                  </div>
+            <button
+              type="button"
+              onClick={() => setShowDisabledOnly((v) => !v)}
+              className={`shrink-0 px-3 py-2 rounded border text-sm font-medium transition-all ${
+                showDisabledOnly
+                  ? 'bg-red-900/40 border-red-500 text-red-300'
+                  : 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600'
+              }`}
+              title="Show disabled only"
+            >
+              Disabled only
+            </button>
+          </div>
 
-                  <div className="flex items-center gap-3 shrink-0">
-                    {overridden ? (
-                      <span className="text-xs text-amber-400">
-                        Blocked by US restriction
-                      </span>
-                    ) : (
-                      <span
-                        className={`text-xs font-medium ${
-                          item.enabled ? 'text-green-400' : 'text-red-400'
-                        }`}
-                      >
-                        {item.enabled ? 'Enabled' : 'Disabled'}
-                      </span>
-                    )}
-                    <ToggleSwitch
-                      enabled={item.enabled}
-                      saving={saving}
-                      onToggle={() => handleToggle(item.code)}
-                      label={`Toggle Bet & Burn for ${item.name}`}
-                    />
-                  </div>
-                </div>
-              );
-            })
+          {/* US global-override banner (states sub-tab only) */}
+          {subTab === 'states' && usGloballyDisabled && (
+            <div className="bg-amber-900/20 border border-amber-500 rounded-lg p-3">
+              <p className="text-amber-300 text-sm">
+                The <span className="font-semibold">United States</span> is globally
+                disabled, so <span className="font-semibold">all U.S. states are
+                currently blocked</span> regardless of their individual settings.
+                Re-enable the US in the Countries tab to apply per-state settings.
+              </p>
+            </div>
           )}
-        </div>
-      </div>
+
+          {/* Save error feedback */}
+          {saveError && (
+            <div className="bg-red-900/20 border border-red-500 rounded-lg p-3">
+              <p className="text-red-400 text-sm">{saveError}</p>
+            </div>
+          )}
+
+          {/* Jurisdiction list */}
+          <div className="bg-[#0E0A1B] border border-purple-900/30 rounded-lg overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-2 border-b border-purple-900/30 text-xs uppercase tracking-wide text-gray-400">
+              <span>Jurisdiction</span>
+              <span>Bet &amp; Burn</span>
+            </div>
+
+            <div ref={listScrollRef} className="max-h-[60vh] overflow-y-auto divide-y divide-purple-900/20">
+              {filtered.length === 0 ? (
+                <div className="p-8 text-center text-gray-400">
+                  {showDisabledOnly && list.filter((j) => !j.enabled).length === 0
+                    ? `All ${subTab === 'countries' ? 'countries' : 'states'} are currently enabled.`
+                    : `No ${subTab === 'countries' ? 'countries' : 'states'} match "${search}".`}
+                </div>
+              ) : (
+                filtered.map((item) => {
+                  const key = savingKey(subTab, item.code);
+                  const saving = savingKeys.has(key);
+                  const overridden = subTab === 'states' && usGloballyDisabled;
+                  const isSelected = selectedCode === item.code;
+                  return (
+                    <div
+                      key={item.code}
+                      ref={(el) => {
+                        if (el) itemRefs.current.set(item.code, el);
+                        else itemRefs.current.delete(item.code);
+                      }}
+                      onMouseEnter={() => setHoveredCode(item.code)}
+                      onMouseLeave={() => setHoveredCode(null)}
+                      className={`flex items-center justify-between px-4 py-3 transition-colors ${
+                        isSelected
+                          ? 'bg-purple-900/30'
+                          : hoveredCode === item.code
+                          ? 'bg-purple-900/20'
+                          : 'hover:bg-purple-900/10'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="inline-flex items-center justify-center min-w-[2.5rem] px-2 py-1 rounded bg-gray-700 text-gray-200 text-xs font-mono">
+                          {item.code}
+                        </span>
+                        <span className="text-white truncate">{item.name}</span>
+                      </div>
+
+                      <div className="flex items-center gap-3 shrink-0">
+                        {overridden ? (
+                          <span className="text-xs text-amber-400">
+                            Blocked by US restriction
+                          </span>
+                        ) : (
+                          <span
+                            className={`text-xs font-medium ${
+                              item.enabled ? 'text-green-400' : 'text-red-400'
+                            }`}
+                          >
+                            {item.enabled ? 'Enabled' : 'Disabled'}
+                          </span>
+                        )}
+                        <ToggleSwitch
+                          enabled={item.enabled}
+                          saving={saving}
+                          onToggle={() => handleListToggle(item.code)}
+                          label={`Toggle Bet & Burn for ${item.name}`}
+                        />
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
 
           <div className="text-xs text-gray-500">
             Showing {filtered.length} of {list.length}{' '}
             {subTab === 'countries' ? 'countries' : 'U.S. states'}.
+            {showDisabledOnly && filtered.length > 0 && ' (disabled only)'}
           </div>
         </div>
 
         {/* RIGHT: interactive map — same data/handlers as the list */}
-        <div className="space-y-2">
-          <div className="bg-[#0E0A1B] border border-purple-900/30 rounded-lg p-4">
+        <div className="space-y-2 min-w-0">
+          <div
+            className="bg-[#0E0A1B] border border-purple-900/30 rounded-lg p-4 lg:w-[660px]"
+            style={{ resize: 'horizontal', overflow: 'hidden', minWidth: '280px', maxWidth: '900px' }}
+          >
             {subTab === 'countries' ? (
               <GeoWorldMap
                 jurisdictions={jurisdictionsForMap}
                 savingCodes={savingCodesSet}
                 hoveredCode={hoveredCode}
                 selectedCode={selectedCode}
-                onJurisdictionClick={handleToggle}
+                focusTrigger={mapFocusTrigger}
+                onJurisdictionClick={handleMapClick}
                 onJurisdictionHover={setHoveredCode}
                 className="mx-auto max-w-full"
               />
@@ -369,7 +405,8 @@ export function GeoRestrictions() {
                 savingCodes={savingCodesSet}
                 hoveredCode={hoveredCode}
                 selectedCode={selectedCode}
-                onJurisdictionClick={handleToggle}
+                focusTrigger={mapFocusTrigger}
+                onJurisdictionClick={handleMapClick}
                 onJurisdictionHover={setHoveredCode}
                 className="mx-auto max-w-full"
               />
