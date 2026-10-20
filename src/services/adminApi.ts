@@ -10,6 +10,28 @@ interface ApiError {
   status?: number;
 }
 
+// Geo-location restriction types (mirror the backend GET /geo-restrictions shape)
+export interface GeoJurisdiction {
+  code: string;
+  name: string;
+  enabled: boolean;
+  configured: boolean;
+}
+
+export interface GeoRestrictionsResponse {
+  countries: GeoJurisdiction[];
+  usStates: GeoJurisdiction[];
+}
+
+// Persisted record returned by the PATCH endpoints
+export interface GeoRestrictionRecord {
+  jurisdictionType: 'country' | 'us_state';
+  countryCode: string;
+  stateCode: string | null;
+  enabled: boolean;
+  displayName: string | null;
+}
+
 class AdminApiService {
   private baseUrl: string;
   private token: string | null = null;
@@ -330,6 +352,27 @@ class AdminApiService {
     return this.fetchWithAuth(
       `/api/v2/tournament/tournament-wins?${queryParams.toString()}`
     );
+  }
+
+  // Geo-location Restrictions (Bet & Burn availability by jurisdiction)
+  async getGeoRestrictions() {
+    return this.fetchWithAuth(
+      "/api/v2/geo-restrictions"
+    ) as Promise<GeoRestrictionsResponse>;
+  }
+
+  async updateCountryAvailability(countryCode: string, enabled: boolean) {
+    return this.fetchWithAuth(`/api/v2/geo-restrictions/countries/${countryCode}`, {
+      method: "PATCH",
+      body: JSON.stringify({ enabled }),
+    }) as Promise<GeoRestrictionRecord>;
+  }
+
+  async updateStateAvailability(stateCode: string, enabled: boolean) {
+    return this.fetchWithAuth(`/api/v2/geo-restrictions/states/${stateCode}`, {
+      method: "PATCH",
+      body: JSON.stringify({ enabled }),
+    }) as Promise<GeoRestrictionRecord>;
   }
 }
 

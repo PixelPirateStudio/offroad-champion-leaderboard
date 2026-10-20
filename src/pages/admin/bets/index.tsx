@@ -5,6 +5,7 @@ import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import { adminApi } from '@/services/adminApi';
 import { useRequireAdmin } from '@/contexts/AdminAuthContext';
+import { GeoRestrictions } from '@/components/admin/GeoRestrictions';
 
 dayjs.extend(relativeTime);
 
@@ -96,7 +97,7 @@ const generateMockTaxForms = (): TaxFormData[] => {
   ];
 };
 
-type TabType = 'live' | 'open' | 'tax';
+type TabType = 'live' | 'open' | 'tax' | 'geo';
 
 const REFRESH_INTERVAL = 10000; // 10 seconds for live data refresh
 
@@ -303,14 +304,14 @@ export default function BetsPage() {
 
   // Fetch metrics when period changes
   useEffect(() => {
-    if (isAuthenticated && activeTab !== 'tax') {
+    if (isAuthenticated && (activeTab === 'open' || activeTab === 'live')) {
       fetchMetrics(betsPeriod);
     }
   }, [isAuthenticated, betsPeriod, activeTab]);
 
   // Fetch data when authenticated, tab changes, page changes, or resolved player ID changes
   useEffect(() => {
-    if (isAuthenticated && activeTab !== 'tax') {
+    if (isAuthenticated && (activeTab === 'open' || activeTab === 'live')) {
       setIsLoading(true);
       fetchData();
     }
@@ -318,7 +319,7 @@ export default function BetsPage() {
 
   // Auto-refresh for open and live bets
   useEffect(() => {
-    if (isAuthenticated && activeTab !== 'tax') {
+    if (isAuthenticated && (activeTab === 'open' || activeTab === 'live')) {
       const interval = setInterval(() => {
         fetchData();
         fetchMetrics(betsPeriod);
@@ -393,7 +394,7 @@ export default function BetsPage() {
     return flags[countryCode] || '🏁';
   };
 
-  if (authLoading || isLoading) {
+  if (authLoading || (isLoading && (activeTab === 'open' || activeTab === 'live'))) {
     return (
       <AdminLayout>
         <div className="flex items-center justify-center h-64">
@@ -407,15 +408,22 @@ export default function BetsPage() {
     <AdminLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center gap-4">
-          <div className="w-16 h-16 bg-yellow-500 rounded-full flex items-center justify-center">
-            <div className="text-3xl">🏆</div>
+        {activeTab === 'geo' ? (
+          <h1 className="text-3xl font-bold text-center">
+            <span className="text-yellow-500">ORC Bet &amp; Burn:</span>{' '}
+            <span className="text-white">Geo-location Restrictions</span>
+          </h1>
+        ) : (
+          <div className="flex items-center gap-4">
+            <div className="w-16 h-16 bg-yellow-500 rounded-full flex items-center justify-center">
+              <div className="text-3xl">🏆</div>
+            </div>
+            <h1 className="text-3xl font-bold text-yellow-500">ORC Bet & Burn Data</h1>
           </div>
-          <h1 className="text-3xl font-bold text-yellow-500">ORC Bet & Burn Data</h1>
-        </div>
+        )}
 
         {/* Tabs */}
-        <div className="flex gap-4">
+        <div className={`flex gap-4 ${activeTab === 'geo' ? 'justify-center' : ''}`}>
           <button
             onClick={() => setActiveTab('live')}
             className={`px-8 py-3 rounded-full font-semibold transition-all ${
@@ -446,10 +454,20 @@ export default function BetsPage() {
           >
             Tax Forms
           </button>
+          <button
+            onClick={() => setActiveTab('geo')}
+            className={`px-8 py-3 rounded-full font-semibold transition-all ${
+              activeTab === 'geo'
+                ? 'bg-yellow-500 text-black'
+                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            }`}
+          >
+            Geo-location Restrictions
+          </button>
         </div>
 
         {/* Search Bar - For Open and Live Bets */}
-        {activeTab !== 'tax' && (
+        {(activeTab === 'open' || activeTab === 'live') && (
           <div className="space-y-2">
             <div className="flex items-center gap-4">
               <div className="flex-1 max-w-md">
@@ -489,7 +507,7 @@ export default function BetsPage() {
         )}
 
         {/* Metrics - Conditional rendering based on active tab */}
-        {activeTab !== 'tax' ? (
+        {(activeTab === 'open' || activeTab === 'live') ? (
           <div className="flex gap-8 items-center">
             <div className="flex items-center gap-3">
               <select
@@ -546,7 +564,7 @@ export default function BetsPage() {
               Last updated: {dayjs(lastRefresh).format('h:mm:ss A')}
             </div>
           </div>
-        ) : (
+        ) : activeTab === 'tax' ? (
           <div className="flex gap-8">
             <div className="flex items-center gap-3">
               <button
@@ -582,7 +600,7 @@ export default function BetsPage() {
               </div>
             </div>
           </div>
-        )}
+        ) : null}
 
         {/* Error Display */}
         {error && (
@@ -852,6 +870,9 @@ export default function BetsPage() {
             </div>
           </div>
         )}
+
+        {/* Geo-location Restrictions Content */}
+        {activeTab === 'geo' && <GeoRestrictions />}
       </div>
     </AdminLayout>
   );
